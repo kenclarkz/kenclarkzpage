@@ -44,21 +44,55 @@
       </div>
 
       <div id="overlay" hidden>
-        <section id="screen-home" class="screen">
-          <h1>Temple Runner</h1>
-          <p class="bank"><b class="bank-value">0</b> coins banked</p>
-          <button id="btn-play" class="primary" type="button">Play</button>
-          <button id="btn-store" type="button">Store</button>
-          <button id="btn-options" type="button">Options</button>
+        <section id="screen-home" class="screen home">
+          <div class="topbar">
+            <div class="card">
+              <div id="avatar" class="avatar"></div>
+              <div class="card-meta">
+                <strong id="profile-name">Explorer</strong>
+                <span>Best <b id="profile-best">0</b></span>
+              </div>
+            </div>
+            <div class="chip">
+              <span class="chip-row"><i class="coin"></i><b class="bank-value">0</b></span>
+              <span class="chip-label">[coins]</span>
+            </div>
+          </div>
+
+          <h1 class="logo"><span>Temple</span><span>Runner</span></h1>
+
+          <nav class="menu">
+            <button id="btn-play" class="mbtn play" type="button">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3l12 7-12 7z"/></svg>
+              <span>[play]</span>
+            </button>
+            <button id="btn-store" class="mbtn shop" type="button">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M7 6a3 3 0 0 1 6 0" fill="none" stroke="currentColor" stroke-width="2"/>
+                <path d="M4 6h12l2 11H2z"/>
+              </svg>
+              <span>[shop]</span>
+            </button>
+            <button id="btn-options" class="mbtn settings" type="button">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M2 6h9M15 6h3M2 14h3M9 14h9" stroke="currentColor" stroke-width="2" fill="none"/>
+                <circle cx="13" cy="6" r="2.6"/><circle cx="7" cy="14" r="2.6"/>
+              </svg>
+              <span>[settings]</span>
+            </button>
+            <a id="back" class="mbtn exit" href="index.html">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M3 2h8v16H3z"/>
+                <path d="M12 10h6m0 0l-2.5-2.5M18 10l-2.5 2.5" stroke="currentColor" stroke-width="2" fill="none"/>
+              </svg>
+              <span>[exit]</span>
+            </a>
+          </nav>
+
           <p class="hint">
             Swipe <b>left</b> / <b>right</b> to change lanes, <b>up</b> to jump,
-            <b>down</b> to slide. Corners turn on their own.
+            <b>down</b> to slide. Corners turn themselves.
           </p>
-          <p class="hint">
-            Hit something and the guardian gives chase &mdash; stay clean for ten
-            seconds to shake it off.
-          </p>
-          <a id="back" href="index.html">&larr; back to the site</a>
         </section>
 
         <section id="screen-store" class="screen" hidden>

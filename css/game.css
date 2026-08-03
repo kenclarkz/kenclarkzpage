@@ -6,6 +6,24 @@
   --ink: #efe7d6;
   --gold: #e0a83a;
   --muted: rgba(239, 231, 214, 0.62);
+
+  /* Arcade chrome. `--edge` is the single dark outline every raised element
+     shares — borders and their offset shadows both use it, which is what makes
+     the pieces read as one set rather than as separate widgets. */
+  --edge: #241708;
+  --play: #4ea62a;
+  --shop: #e8892a;
+  --settings: #7d8a93;
+  --exit: #cf3a2b;
+}
+
+/* Buttons get border-box from the UA stylesheet but anchors do not, so a
+   width:100% <a> styled as a button ends up wider than its siblings by its own
+   padding and border. Setting it once here is cheaper than remembering. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 html,
@@ -201,9 +219,13 @@ canvas#view {
   display: grid;
   place-items: center;
   padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
-  background: radial-gradient(ellipse at 50% 45%, rgba(11, 14, 20, 0.72), rgba(11, 14, 20, 0.94));
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
+  /* Lighter than it was, and barely blurred: the temple behind is a live render
+     and the menus are meant to sit on top of it rather than hide it. The
+     buttons carry their own dark edges, so they stay legible without the
+     backdrop doing the work. */
+  background: radial-gradient(ellipse at 50% 45%, rgba(11, 14, 20, 0.42), rgba(11, 14, 20, 0.86));
+  -webkit-backdrop-filter: blur(1px);
+  backdrop-filter: blur(1px);
 }
 
 #overlay[hidden] {
@@ -224,11 +246,19 @@ canvas#view {
   display: none;
 }
 
+/* Same treatment as the home logo, one size down, so every screen title reads
+   as part of the same set. */
 .screen h1 {
   margin: 0 0 12px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-weight: 900;
   font-size: clamp(26px, 8vw, 40px);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
   color: var(--gold);
+  -webkit-text-stroke: 5px var(--edge);
+  paint-order: stroke fill;
+  text-shadow: 0 4px 0 #7a3d0a;
 }
 
 .screen p {
@@ -257,47 +287,207 @@ canvas#view {
   font-size: 13px;
 }
 
-/* Every screen button shares one look; `.primary` is the one you want. */
-.screen button {
-  display: block;
+/* Chunky arcade buttons: a hard dark edge and an offset solid shadow, no
+   blur anywhere. The press moves the button down onto its own shadow, which is
+   what makes it feel physical. */
+.screen button,
+.mbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   width: 100%;
   margin: 0 0 10px;
-  padding: 14px 22px;
-  border: 1px solid rgba(224, 168, 58, 0.4);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--ink);
-  font: inherit;
-  font-size: 16px;
-  font-weight: 600;
+  padding: 14px 18px;
+  border: 3px solid var(--edge);
+  border-radius: 10px;
+  background: #6d6154;
+  color: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45);
+  box-shadow: 0 5px 0 var(--edge);
   cursor: pointer;
   pointer-events: auto;
 }
 
-.screen button.primary {
-  border-color: transparent;
-  background: var(--gold);
-  color: #17120a;
-  font-weight: 700;
-}
-
-.screen button:active {
-  transform: translateY(1px);
+.screen button:active,
+.mbtn:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 var(--edge);
 }
 
 .screen button:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: default;
+  transform: none;
+  box-shadow: 0 5px 0 var(--edge);
+}
+
+.screen button.primary {
+  background: var(--play);
 }
 
 .screen button.off {
-  color: var(--muted);
-  border-color: rgba(239, 231, 214, 0.18);
+  background: #4a443c;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .screen button.danger {
-  border-color: rgba(220, 70, 40, 0.7);
-  color: #ff9c7a;
+  background: var(--exit);
+}
+
+/* --- home ---------------------------------------------------------------- */
+
+.mbtn svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  stroke: currentColor;
+  /* Icons are drawn on a 20x20 grid; nothing here should be antialiased into
+     mush at that size. */
+  shape-rendering: geometricPrecision;
+}
+
+.mbtn.play { background: var(--play); }
+.mbtn.shop { background: var(--shop); }
+.mbtn.settings { background: var(--settings); }
+.mbtn.exit { background: var(--exit); margin-bottom: 0; }
+
+.menu {
+  padding: 12px;
+  border: 3px solid var(--edge);
+  border-radius: 14px;
+  background: rgba(28, 22, 16, 0.55);
+  box-shadow: 0 5px 0 var(--edge);
+}
+
+.home .topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.card,
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 3px solid var(--edge);
+  border-radius: 10px;
+  background: rgba(28, 22, 16, 0.72);
+  box-shadow: 0 4px 0 var(--edge);
+}
+
+.chip {
+  flex-direction: column;
+  gap: 1px;
+}
+
+.chip-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chip-row b {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  color: #fff;
+}
+
+.chip-label,
+.card-meta span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.coin {
+  width: 13px;
+  height: 13px;
+  border: 2px solid #8a5f14;
+  border-radius: 50%;
+  background: var(--gold);
+}
+
+/* A blocky face built from the equipped skin's own palette — see
+   Hud.renderAvatar, which fills in the colours. */
+.avatar {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 2px solid var(--edge);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.avatar i {
+  position: absolute;
+  display: block;
+}
+
+.avatar .av-hair { left: 0; right: 0; top: 0; height: 26%; }
+.avatar .av-band { left: 0; right: 0; top: 26%; height: 12%; }
+.avatar .av-eye { top: 52%; width: 20%; height: 16%; }
+.avatar .av-eye.l { left: 20%; }
+.avatar .av-eye.r { right: 20%; }
+
+.card-meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.25;
+  text-align: left;
+}
+
+.card-meta strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.card-meta b {
+  color: #fff;
+}
+
+.logo {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 20px;
+  /* System 900 rather than a downloaded pixel font: nothing here is allowed to
+     need the network, and the heavy weight plus a thick stroke gets most of the
+     way to the same chunky look. */
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-weight: 900;
+  font-size: clamp(38px, 13vw, 62px);
+  /* Loose enough that the first line's hard drop shadow clears the second.
+     Anything tighter and "TEMPLE" bleeds into "RUNNER". */
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  color: var(--gold);
+  -webkit-text-stroke: 6px var(--edge);
+  /* Without this the stroke is painted over the fill and eats the letterforms
+     from the inside. */
+  paint-order: stroke fill;
+  text-shadow: 0 6px 0 #7a3d0a;
+}
+
+.logo span:last-child {
+  color: #ffd76a;
 }
 
 #result-body .big {
@@ -330,20 +520,23 @@ canvas#view {
   margin-bottom: 16px;
 }
 
+/* Opaque enough to hold its own against the live temple behind it — the
+   overlay no longer darkens the scene much, so each row has to bring its own
+   background rather than relying on the backdrop. */
 .skin {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid rgba(239, 231, 214, 0.12);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
+  padding: 9px 10px;
+  border: 3px solid var(--edge);
+  border-radius: 10px;
+  background: rgba(30, 23, 15, 0.82);
+  box-shadow: 0 4px 0 var(--edge);
   text-align: left;
 }
 
 .skin.equipped {
-  border-color: rgba(224, 168, 58, 0.55);
-  background: rgba(224, 168, 58, 0.08);
+  background: rgba(93, 63, 16, 0.92);
 }
 
 .swatch {
@@ -381,18 +574,20 @@ canvas#view {
   width: auto;
   flex: none;
   margin: 0;
-  padding: 9px 16px;
-  font-size: 14px;
+  padding: 9px 14px;
+  font-size: 13px;
+  box-shadow: 0 4px 0 var(--edge);
 }
 
-#back {
-  display: block;
-  margin-top: 18px;
-  font-size: 12px;
-  color: var(--muted);
-  text-decoration: none;
-  pointer-events: auto;
-}
+/* Green means you can afford it and it is not yours yet; gold means you own it
+   and this puts it on. Without the split, every row's button looks identical
+   and the price is the only thing distinguishing them. */
+.skin button.buy { background: var(--play); }
+.skin button.wear { background: var(--gold); color: #17120a; text-shadow: none; }
+
+/* #back used to be a small text link under the menu. It is the EXIT button
+   now and takes its look from .mbtn — an id rule here would outrank that and
+   silently undo it. */
 
 /* --- iOS install hint ---------------------------------------------------- */
 

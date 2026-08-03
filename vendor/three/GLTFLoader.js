@@ -64,7 +64,7 @@ import {
 	VectorKeyframeTrack,
 	SRGBColorSpace,
 	InstancedBufferAttribute
-} from './three.js';
+} from './three.module.min.js';
 
 /**
  * A loader for the glTF 2.0 format.

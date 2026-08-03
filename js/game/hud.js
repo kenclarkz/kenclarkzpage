@@ -70,6 +70,7 @@ export class Hud {
     click('btn-quit', () => this.on.home?.());
     click('btn-again', () => this.on.play?.());
     click('btn-result-home', () => this.on.home?.());
+    click('btn-exit', () => this.hide());
 
     this.musicBtn = document.getElementById('opt-music');
     this.sfxBtn = document.getElementById('opt-sfx');

@@ -1,0 +1,354 @@
+// Headless smoke test for the game and its PWA plumbing.
+//
+//   npx http-server /home/user -p 8080 -c-1 &
+//   node tools/smoke.mjs
+//
+// Note the server root: the site is served from the /kenclarkzpage/ subpath in
+// production, so it must be served that way here too. Serving the repo root at
+// / would let every absolute-path bug pass locally and 404 on GitHub Pages.
+
+import { readFileSync, readdirSync, statSync, mkdirSync } from 'node:fs';
+import { dirname, join, resolve, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { loadChromium, GL_ARGS } from './pw.mjs';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const BASE = process.env.SMOKE_BASE || 'http://localhost:8080/kenclarkzpage';
+const SHOTS = process.env.SMOKE_SHOTS || join(ROOT, '.smoke');
+
+let failures = 0;
+let checks = 0;
+
+function ok(cond, msg) {
+  checks++;
+  if (cond) {
+    console.log(`  ok   ${msg}`);
+  } else {
+    failures++;
+    console.log(`  FAIL ${msg}`);
+  }
+}
+
+function section(name) {
+  console.log(`\n${name}`);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// --------------------------------------------------------------------------
+// 10. No absolute paths anywhere in the game's own files. This is the single
+//     highest-value check in the file: a leading slash works locally under a
+//     naive server and 404s on a GitHub Pages project site.
+// --------------------------------------------------------------------------
+section('Absolute-path audit');
+{
+  const files = [
+    'game.html',
+    'sw.js',
+    'manifest.webmanifest',
+    'css/game.css',
+    ...readdirSync(join(ROOT, 'js/game')).map((f) => `js/game/${f}`),
+  ];
+  const BAD = [/src\s*=\s*["']\//, /href\s*=\s*["']\//, /"\/[a-z]/i, /'\/[a-z]/i, /url\(\s*\//];
+  let offenders = [];
+  for (const f of files) {
+    const text = readFileSync(join(ROOT, f), 'utf8');
+    text.split('\n').forEach((line, i) => {
+      // Skip comments; "//" and "https://" trip the naive patterns constantly.
+      const code = line.replace(/https?:\/\/\S*/g, '').replace(/\/\/.*$/, '');
+      if (BAD.some((re) => re.test(code))) offenders.push(`${f}:${i + 1}: ${line.trim()}`);
+    });
+  }
+  ok(offenders.length === 0, `no absolute paths in the game's files${offenders.length ? `\n       ${offenders.join('\n       ')}` : ''}`);
+}
+
+// --------------------------------------------------------------------------
+const chromium = await loadChromium();
+const browser = await chromium.launch({ args: GL_ARGS });
+mkdirSync(SHOTS, { recursive: true });
+
+async function newPage(context, query = '') {
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
+  });
+  page.on('requestfailed', (r) => errors.push(`requestfailed: ${r.url()} ${r.failure()?.errorText}`));
+  await page.goto(`${BASE}/game.html${query}`, { waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.__game, null, { timeout: 15000 });
+  return { page, errors };
+}
+
+const context = await browser.newContext({
+  viewport: { width: 390, height: 844 }, // a phone-shaped window
+  deviceScaleFactor: 1,
+});
+
+// --------------------------------------------------------------------------
+section('1-3. Boots, renders, and the loop advances');
+const { page, errors } = await newPage(context, '?seed=1&debug=1');
+{
+  await page.evaluate(() => window.__game.start());
+  await sleep(2000);
+
+  const s = await page.evaluate(() => ({
+    frames: window.__game.frames,
+    tris: window.__game.renderer.info.render.triangles,
+    calls: window.__game.renderer.info.render.calls,
+    dist: window.__game.distance,
+    state: window.__game.state,
+    chunks: window.__game.liveChunks,
+  }));
+
+  ok(s.frames > 60, `renders frames (${s.frames} in 2 s)`);
+  ok(s.tris > 0, `draws geometry (${s.tris} triangles, ${s.calls} draw calls)`);
+  ok(s.calls < 90, `stays within the draw-call budget (${s.calls})`);
+  ok(s.dist > 15, `player advances down the track (${s.dist.toFixed(1)} m)`);
+  ok(s.state === 'playing', 'still playing after 2 s of clear track');
+  ok(s.chunks > 3 && s.chunks < 16, `streams a sane number of chunks (${s.chunks})`);
+
+  const d1 = await page.evaluate(() => window.__game.distance);
+  await sleep(400);
+  const d2 = await page.evaluate(() => window.__game.distance);
+  ok(d2 > d1, 'distance increases monotonically');
+
+  await page.screenshot({ path: join(SHOTS, 'play.png') });
+  ok(errors.length === 0, `no page errors${errors.length ? `\n       ${errors.join('\n       ')}` : ''}`);
+}
+
+// --------------------------------------------------------------------------
+section('4-5. Input');
+{
+  await page.evaluate(() => window.__game.start());
+  await sleep(200);
+
+  await page.keyboard.press('ArrowLeft');
+  await sleep(60);
+  ok((await page.evaluate(() => window.__game.player.targetLane)) === -1, 'ArrowLeft moves to the left lane');
+
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await sleep(60);
+  ok((await page.evaluate(() => window.__game.player.targetLane)) === 1, 'ArrowRight moves to the right lane');
+
+  await page.keyboard.press('ArrowUp');
+  await sleep(120);
+  ok((await page.evaluate(() => window.__game.player.state)) === 1, 'ArrowUp jumps');
+  await sleep(700);
+
+  await page.keyboard.press('ArrowDown');
+  await sleep(120);
+  ok((await page.evaluate(() => window.__game.player.state)) === 2, 'ArrowDown slides');
+  await sleep(700);
+
+  // Playwright's mouse emits pointer events, so this drives the production
+  // swipe handler rather than a test-only shortcut.
+  const swipe = async (dx, dy) => {
+    await page.mouse.move(195, 500);
+    await page.mouse.down();
+    await page.mouse.move(195 + dx, 500 + dy, { steps: 6 });
+    await page.mouse.up();
+    await sleep(80);
+  };
+
+  await page.evaluate(() => {
+    window.__game.player.targetLane = 0;
+  });
+  await swipe(-120, 0);
+  ok((await page.evaluate(() => window.__game.player.targetLane)) === -1, 'swipe left changes lane');
+
+  await swipe(120, 0);
+  await swipe(120, 0);
+  ok((await page.evaluate(() => window.__game.player.targetLane)) === 1, 'swipe right changes lane');
+
+  await swipe(0, -120);
+  ok((await page.evaluate(() => window.__game.player.state)) === 1, 'swipe up jumps');
+  await sleep(700);
+
+  await swipe(0, 120);
+  ok((await page.evaluate(() => window.__game.player.state)) === 2, 'swipe down slides');
+  await sleep(700);
+}
+
+// --------------------------------------------------------------------------
+section('7. Death paths');
+{
+  // Missing a corner kills you.
+  await page.evaluate(() => {
+    const g = window.__game;
+    g.start();
+    const arc = g.nextArc();
+    g.teleportTo(arc.s0 - 4);
+  });
+  await sleep(1500);
+  let r = await page.evaluate(() => ({ state: window.__game.state, why: window.__game.deathReason }));
+  ok(r.state === 'over' && r.why === 'missed-turn', `not turning at a corner kills you (${r.why})`);
+
+  // Swiping the right way takes it. Note this cannot assert on distances
+  // captured beforehand: rebasing shifts every path distance mid-run.
+  const took = await page.evaluate(async () => {
+    const g = window.__game;
+    g.start();
+    const arc = g.nextArc();
+    g.teleportTo(arc.s0 - 5);
+    await new Promise((res) => setTimeout(res, 120));
+    g.emit(arc.dir === 1 ? 'left' : 'right');
+    await new Promise((res) => setTimeout(res, 1500));
+    return { state: g.state, why: g.deathReason, corners: g.cornersTaken };
+  });
+  ok(took.why !== 'missed-turn', `swiping into the corner takes it (${took.why || 'alive'})`);
+  ok(took.corners >= 1, `and carries the player through and out the other side (${took.corners} corner)`);
+
+  // Running into an obstacle kills you.
+  const hit = await page.evaluate(async () => {
+    const g = window.__game;
+    g.start();
+    // Look for a wide obstacle so no lane alignment is needed.
+    for (let i = 0; i < 40; i++) {
+      const o = g.nextObstacle();
+      if (o && (o.kind === 1 || o.kind === 2)) {
+        g.teleportTo(o.s - 4);
+        await new Promise((res) => setTimeout(res, 1200));
+        return { state: g.state, why: g.deathReason, kind: o.kind };
+      }
+      g.teleportTo(g.distance + 20);
+    }
+    return { state: 'none', why: 'no obstacle found' };
+  });
+  ok(hit.state === 'over' && hit.why === 'hit', `running into an obstacle kills you (${hit.why})`);
+
+  await page.screenshot({ path: join(SHOTS, 'gameover.png') });
+}
+
+// --------------------------------------------------------------------------
+section('Visual check: corner geometry');
+{
+  // The corner is the only hand-derived geometry in the game (a plaza, an outer
+  // L of walls, and a chamfered inner corner), so it gets looked at rather than
+  // just asserted on.
+  for (const [name, offset] of [['corner-far', 30], ['corner-near', 9]]) {
+    await page.evaluate((back) => {
+      const g = window.__game;
+      g.start();
+      const arc = g.nextArc();
+      g.teleportTo(arc.s0 - back);
+      g.player.speed = 0;
+    }, offset);
+    await sleep(250);
+    await page.screenshot({ path: join(SHOTS, `${name}.png`) });
+  }
+  ok(true, 'captured corner approach screenshots for review');
+}
+
+// --------------------------------------------------------------------------
+section('6. Determinism');
+{
+  // The opening run is straights by design, so sample far enough ahead that
+  // corner placement has actually had a chance to diverge.
+  const signature = (p) =>
+    p.evaluate(() => {
+      const path = window.__game.track.path;
+      while (path.end < 3000) path.append();
+      return path.nodes.map((n) => `${n.kind}:${n.dir}`).join(',');
+    });
+
+  const a = await newPage(context, '?seed=42');
+  const b = await newPage(context, '?seed=42');
+  const c = await newPage(context, '?seed=99');
+  const sa = await signature(a.page);
+  const sb = await signature(b.page);
+  const sc = await signature(c.page);
+  ok(sa.length > 0 && sa === sb, 'the same seed generates the same track');
+  ok(sa !== sc, 'a different seed generates a different track');
+  await a.page.close();
+  await b.page.close();
+  await c.page.close();
+}
+
+// --------------------------------------------------------------------------
+section('8. Manifest and icons');
+{
+  const res = await page.request.get(`${BASE}/manifest.webmanifest`);
+  ok(res.status() === 200, 'manifest is served');
+  const manifest = JSON.parse(await res.text());
+
+  const flat = JSON.stringify(manifest);
+  ok(!/"\.?\/?[^"]*":\s*"\/[^/]/.test(flat) && !/"\/[a-z]/i.test(flat), 'no absolute paths inside the manifest');
+
+  ok(!!manifest.name && !!manifest.short_name, 'manifest has name and short_name');
+  ok(manifest.display === 'fullscreen', 'manifest asks for fullscreen');
+
+  const sizes = manifest.icons.map((i) => i.sizes);
+  ok(sizes.includes('192x192') && sizes.includes('512x512'), 'manifest has the 192 and 512 icons Chrome requires');
+  ok(manifest.icons.some((i) => i.purpose === 'maskable'), 'manifest has a maskable icon');
+
+  for (const icon of manifest.icons) {
+    const r = await page.request.get(`${BASE}/${icon.src}`);
+    ok(r.status() === 200, `icon ${icon.src} resolves`);
+  }
+  const apple = await page.request.get(`${BASE}/icons/apple-touch-icon-180.png`);
+  ok(apple.status() === 200, 'apple-touch-icon resolves');
+}
+
+// --------------------------------------------------------------------------
+section('9. Offline');
+{
+  const offlineCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const p = await offlineCtx.newPage();
+  const offErrors = [];
+  p.on('pageerror', (e) => offErrors.push(e.message));
+
+  await p.goto(`${BASE}/game.html`, { waitUntil: 'load' });
+  await p.evaluate(() => navigator.serviceWorker.ready);
+  await sleep(2500); // let addAll finish
+
+  await offlineCtx.setOffline(true);
+  await p.reload({ waitUntil: 'load' });
+  await p.waitForFunction(() => !!window.__game, null, { timeout: 15000 }).catch(() => {});
+
+  const alive = await p.evaluate(() => {
+    if (!window.__game) return null;
+    window.__game.start();
+    return new Promise((res) =>
+      setTimeout(
+        () =>
+          res({
+            frames: window.__game.frames,
+            tris: window.__game.renderer.info.render.triangles,
+            dist: window.__game.distance,
+          }),
+        2000
+      )
+    );
+  });
+
+  ok(!!alive, 'the page loads with no network at all');
+  // A cold software-rasterised start is slow; this asserts liveness, not speed.
+  ok(alive && alive.frames > 10, `and keeps rendering offline (${alive ? alive.frames : 0} frames)`);
+  ok(alive && alive.dist > 1, `and the game actually runs offline (${alive ? alive.dist.toFixed(1) : 0} m)`);
+  ok(alive && alive.tris > 0, 'and three.js loaded from cache (geometry is drawing)');
+  ok(offErrors.length === 0, `no errors offline${offErrors.length ? `\n       ${offErrors.join('\n       ')}` : ''}`);
+  await p.screenshot({ path: join(SHOTS, 'offline.png') });
+
+  // The worker sits at the repo root, so its scope covers the portfolio site
+  // too. Confirm the OWNED filter leaves index.html and its assets alone.
+  await offlineCtx.setOffline(false);
+  const portfolio = await p.goto(`${BASE}/index.html`, { waitUntil: 'domcontentloaded' });
+  ok(portfolio.status() === 200, 'index.html still loads with the worker active');
+  const css = await p.request.get(`${BASE}/css/style.css`);
+  ok(css.status() === 200, "the portfolio's own assets are untouched by the worker");
+  const linked = await p.$$eval('a[href="game.html"]', (a) => a.length);
+  ok(linked > 0, 'index.html links to the game');
+
+  await offlineCtx.close();
+}
+
+await browser.close();
+
+console.log('');
+if (failures) {
+  console.error(`${failures} of ${checks} checks FAILED`);
+  process.exit(1);
+}
+console.log(`all ${checks} checks passed  (screenshots in ${relative(ROOT, SHOTS) || SHOTS})`);

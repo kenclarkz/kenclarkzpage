@@ -26,13 +26,6 @@ export const SLIDE_TIME = 0.62;
 export const LATERAL_EASE = 13;     // higher = snappier lane changes
 export const PLAYER_HALF_W = 0.42;  // collider half-width
 
-// --- turns ----------------------------------------------------------------
-// The reaction window scales with speed so a corner always gives the same
-// amount of *time* to react, not the same distance.
-export const TURN_WINDOW_SECONDS = 0.9;
-export const TURN_WINDOW_MIN = 10;  // metres, floor for the window at low speed
-export const TURN_WINDOW_AFTER = 0.4;  // metres of grace once inside the arc
-
 // --- streaming ------------------------------------------------------------
 export const SPAWN_AHEAD = 100;     // must exceed FOG_FAR
 export const RETIRE_BEHIND = 25;

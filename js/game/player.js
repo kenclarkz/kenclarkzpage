@@ -90,8 +90,6 @@ export class Player {
     this.runPhase = 0;
     this.speed = C.SPEED_0;
     this.tumble = 0;
-    this.overshoot = 0;
-    this.overshootTarget = 0;
     this.body.rotation.set(0, 0, 0);
     this.body.position.set(0, 0, 0);
     this.group.position.set(0, 0, 0);
@@ -136,11 +134,6 @@ export class Player {
     this.state = DEAD;
     this.deathReason = reason;
     this.tumble = 0;
-    this.overshoot = 0;
-    // Missing a corner freezes progress along the path, so without this the
-    // runner would stop dead several metres short of the wall. Instead they
-    // carry straight on into it, and the tumble waits until they arrive.
-    this.overshootTarget = reason === 'missed-turn' ? C.ARC_RADIUS + C.HALF_W - 1.2 : 0;
   }
 
   /** True once the death animation has played far enough to show the panel. */
@@ -226,18 +219,6 @@ export class Player {
   }
 
   updateDeath(dt) {
-    if (this.overshoot < this.overshootTarget) {
-      this.overshoot = Math.min(this.overshootTarget, this.overshoot + this.speed * dt);
-      // Still running, right up until the wall.
-      this.runPhase += dt * this.speed * 0.62;
-      const sw = Math.sin(this.runPhase);
-      this.parts.legL.rotation.x = sw * 0.95;
-      this.parts.legR.rotation.x = -sw * 0.95;
-      this.parts.armR.rotation.x = sw * 0.75;
-      this.parts.armL.rotation.x = -sw * 0.75;
-      return;
-    }
-
     this.tumble += dt;
     const t = Math.min(1, this.tumble * 1.6);
     this.body.rotation.x = -t * 2.2;

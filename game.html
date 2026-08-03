@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <!-- viewport-fit=cover is mandatory: without it every env(safe-area-inset-*)
+         below evaluates to 0 and the score sits under an iPhone's notch. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <title>Temple Runner</title>
+    <meta name="description" content="An endless 3D runner you can install on your phone.">
+
+    <link rel="stylesheet" href="css/game.css">
+
+    <!-- Every path is relative: this site is served from the /kenclarkzpage/
+         subpath, so a leading slash would resolve to the domain root. -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#0b0e14">
+
+    <!-- iOS ignores the manifest for both the icon and the display mode. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Runner">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+    <link rel="icon" href="icons/icon-192.png" type="image/png">
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="view"></canvas>
+
+      <div id="hud">
+        <div id="stats">
+          <div class="stat"><span class="label">Score</span><span id="score">0</span></div>
+          <div class="stat"><span class="label">Coins</span><span id="coins">0</span></div>
+          <div class="stat"><span class="label">Best</span><span id="best">0</span></div>
+        </div>
+        <button id="install" type="button" hidden>Install</button>
+        <pre id="debug" hidden></pre>
+      </div>
+
+      <div id="overlay" hidden>
+        <div id="panel">
+          <h1 id="panel-title"></h1>
+          <div id="panel-body"></div>
+          <button id="panel-action" type="button"></button>
+          <a id="back" href="index.html">&larr; back to the site</a>
+        </div>
+      </div>
+
+      <div id="ios-hint" hidden>
+        <p>Install it: tap <b>Share</b>, then <b>Add to Home Screen</b>.</p>
+        <button id="ios-dismiss" type="button" aria-label="Dismiss">&times;</button>
+      </div>
+    </div>
+
+    <noscript>
+      <p style="color:#e8e2d4;font:16px system-ui;padding:24px">
+        This game needs JavaScript.
+      </p>
+    </noscript>
+
+    <script type="module" src="js/game/main.js"></script>
+  </body>
+</html>

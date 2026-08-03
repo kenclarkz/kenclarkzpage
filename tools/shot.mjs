@@ -62,4 +62,35 @@ for (const [name, dist] of poses) {
   console.log(`  wrote ${name}.png`);
 }
 
+// The slide, sampled part-way through so the pose has eased in but not expired.
+await page.evaluate(() => {
+  const g = window.__game;
+  g.start();
+  g.teleportTo(40);
+  g.player.slide();
+});
+await sleep(260);
+await page.evaluate(() => {
+  window.__game.player.speed = 0;
+  window.__game.player.slideTimer = 999; // hold the pose for the capture
+});
+await sleep(200);
+await page.screenshot({ path: join(OUT, 'shot-slide.png') });
+console.log('  wrote shot-slide.png');
+
+// The guardian, right on the runner's heels.
+await page.evaluate(() => {
+  const g = window.__game;
+  g.start();
+  g.teleportTo(40);
+  g.startChase();
+});
+await sleep(1400);
+await page.evaluate(() => {
+  window.__game.player.speed = 0;
+});
+await sleep(200);
+await page.screenshot({ path: join(OUT, 'shot-chase.png') });
+console.log('  wrote shot-chase.png');
+
 await browser.close();

@@ -304,10 +304,15 @@ export class Entities {
   }
 
   /**
-   * Cheap 1D scan. Returns the number of coins collected; calls onDeath(reason)
-   * if the player hit something.
+   * Cheap 1D scan. Returns the number of coins collected; calls onHit(kind)
+   * when the player runs into something.
+   *
+   * Whether a hit ends the run is not decided here — that depends on the chase
+   * — so the obstacle is consumed on contact either way. Leaving it in place
+   * would re-trigger the collision every frame the player overlapped it, which
+   * would turn a single stumble into an instant catch.
    */
-  collide(player, onDeath) {
+  collide(player, onHit) {
     const items = this.items;
     let collected = 0;
 
@@ -334,12 +339,14 @@ export class Entities {
         continue;
       }
 
-      const fatal =
+      const struck =
         (it.kind === BARRIER && player.y < BARRIER_CLEAR_Y) ||
         (it.kind === BEAM && !player.isSliding) ||
         it.kind === BLOCK;
-      if (fatal) {
-        onDeath('hit');
+      if (struck) {
+        it.alive = false;
+        this.dirty = true;
+        onHit(it.kind);
         break;
       }
     }

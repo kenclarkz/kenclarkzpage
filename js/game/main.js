@@ -7,6 +7,7 @@ import { Track } from './track.js';
 import { LEFT, RIGHT } from './path.js';
 import { Entities } from './entities.js';
 import { Player } from './player.js';
+import { Monster } from './monster.js';
 import { Atmosphere } from './atmosphere.js';
 import * as Input from './input.js';
 import { Hud, loadHighScore, saveHighScore } from './hud.js';
@@ -69,6 +70,9 @@ scene.add(track.root);
 const player = new Player();
 scene.add(player.group);
 
+const monster = new Monster();
+scene.add(monster.group);
+
 const hud = new Hud();
 if (DEBUG) hud.enableDebug();
 
@@ -82,6 +86,12 @@ let cornersTaken = 0;
 let frames = 0;
 let elapsed = 0; // drives the coin spin and the torch flicker
 
+// The chase. `timer` counts down the window in which another hit is fatal;
+// `receding` is the tail where the guardian drops back and you are already
+// safe; `pounce` is the catch animation playing over the death.
+const chase = { timer: 0, receding: 0, pounce: 0 };
+const chaseActive = () => chase.timer > 0;
+
 hud.setBest(best);
 
 function resetRun() {
@@ -93,8 +103,13 @@ function resetRun() {
   coins = 0;
   lastArc = null;
   cornersTaken = 0;
+  chase.timer = 0;
+  chase.receding = 0;
+  chase.pounce = 0;
+  monster.reset();
   hud.setScore(0);
   hud.setCoins(0);
+  hud.setChase(0);
   // Build the world in front of the player before the first frame is shown.
   track.update(player.distance);
   entities.refresh(track.path);
@@ -109,6 +124,11 @@ function startGame() {
 
 function finishRun() {
   state = OVER;
+  // updateChase stops running once the player is dead, so the warning has to be
+  // cleared here or it would sit over the game-over panel.
+  chase.timer = 0;
+  chase.receding = 0;
+  hud.setChase(0);
   if (score > best) {
     best = Math.floor(score);
     saveHighScore(best);
@@ -118,8 +138,8 @@ function finishRun() {
 
 function showGameOverPanel() {
   hud.showPanel(
-    'Wiped out',
-    `<p>You hit something.</p><p class="big">${Math.floor(score).toLocaleString()}</p>
+    'Caught',
+    `<p>The guardian had you.</p><p class="big">${Math.floor(score).toLocaleString()}</p>
      <p class="sub">${coins} coins &middot; best ${best.toLocaleString()}</p>`,
     'Run again'
   );
@@ -131,7 +151,9 @@ function showMenu() {
     'Temple Runner',
     `<p>Swipe <b>left</b> / <b>right</b> to change lanes.</p>
      <p>Swipe <b>up</b> to jump, <b>down</b> to slide.</p>
-     <p class="sub">Corners turn on their own &mdash; just watch for obstacles.</p>`,
+     <p>Hit something and the <b>guardian</b> gives chase. Stay clean for
+        ten seconds to outrun it &mdash; hit anything before then and it has you.</p>
+     <p class="sub">Corners turn on their own.</p>`,
     'Run'
   );
 }
@@ -143,6 +165,41 @@ function showMenu() {
 function onLateral(dir) {
   // path LEFT is +1; lanes run left(-1) to right(+1), hence the negation.
   player.moveLane(-dir);
+}
+
+// --- the chase ------------------------------------------------------------
+/**
+ * Running into something. The first hit does not end the run — it puts the
+ * guardian on your heels for CHASE_SECONDS. Hit anything while it is still
+ * back there and it has you.
+ */
+function onObstacleHit() {
+  if (chaseActive()) {
+    chase.pounce = C.POUNCE_TIME;
+    player.die('caught');
+    return;
+  }
+  chase.timer = C.CHASE_SECONDS;
+  chase.receding = 0;
+  player.stumble();
+}
+
+function updateChase(dt) {
+  if (chase.timer > 0) {
+    chase.timer = Math.max(0, chase.timer - dt);
+    // Outrun it: hand over to the recede tail, where you are already safe.
+    if (chase.timer === 0) chase.receding = C.CHASE_RECEDE;
+  } else if (chase.receding > 0) {
+    chase.receding = Math.max(0, chase.receding - dt);
+  }
+  hud.setChase(chase.timer / C.CHASE_SECONDS);
+}
+
+/** 1 = right on your heels, 0 = gone. */
+function chaseNearness() {
+  if (chase.timer > 0) return 1;
+  if (chase.receding > 0) return chase.receding / C.CHASE_RECEDE;
+  return 0;
 }
 
 /** Tracks how many corners the player has passed, for the HUD/score only. */
@@ -192,7 +249,8 @@ function step(dt) {
   }
 
   if (state === PLAYING && !player.isDead) {
-    const got = entities.collide(player, (reason) => player.die(reason));
+    updateChase(dt);
+    const got = entities.collide(player, onObstacleHit);
     if (got) {
       coins += got;
       hud.setCoins(coins);
@@ -204,7 +262,21 @@ function step(dt) {
   if (entities.dirty) entities.refresh(track.path);
   elapsed += dt;
   entities.spin(elapsed);
-  atmosphere.update(dt, state === PLAYING && !player.isDead ? player.speed : 0);
+  const running = state === PLAYING && !player.isDead;
+  atmosphere.update(dt, running ? player.speed : 0);
+
+  // The guardian keeps closing during the death animation, so a catch reads as
+  // being caught rather than as the world simply stopping.
+  if (chase.pounce > 0) chase.pounce = Math.max(0, chase.pounce - dt);
+  const pounce = chase.pounce > 0 ? 1 - chase.pounce / C.POUNCE_TIME : 0;
+  monster.update(
+    dt,
+    player.speed,
+    player.deathReason === 'caught' ? 1 : chaseNearness(),
+    player.lateral,
+    pounce
+  );
+
   updateWorldTransform();
   updateCamera(dt);
 
@@ -220,6 +292,13 @@ function updateCamera(dt) {
   // being in that lane while staying near the centre of the screen.
   camera.position.x += (-player.lateral * 0.25 - camera.position.x) * k;
   camera.position.y += (3.1 + player.y * 0.28 - camera.position.y) * Math.min(1, dt * 7);
+
+  // Give ground to the guardian so it fits in frame behind the runner. Kept
+  // deliberately small: pulling back far enough to show it in full would
+  // shrink the track just when reading obstacles matters most.
+  const near = player.deathReason === 'caught' ? 1 : chaseNearness();
+  camera.position.z += (5.4 + near * 1.1 - camera.position.z) * Math.min(1, dt * 3);
+
   camera.lookAt(0, 1.15, -4);
 
   const t = (player.speed - C.SPEED_0) / (C.SPEED_MAX - C.SPEED_0);
@@ -415,6 +494,16 @@ window.__game = {
   get cornersTaken() {
     return cornersTaken;
   },
+  /** Seconds left in the fatal chase window; 0 when nothing is after you. */
+  get chasing() {
+    return chase.timer;
+  },
+  /** Put the guardian on the player's heels, without needing a collision. */
+  startChase() {
+    chase.timer = C.CHASE_SECONDS;
+    chase.receding = 0;
+  },
+  monster,
   player,
   track,
   entities,

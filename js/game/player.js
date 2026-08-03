@@ -89,7 +89,8 @@ function loadModelAsync() {
     gltfLoader.load('vendor/models/character.glb', (gltf) => {
       cachedModel = gltf.scene;
       resolve(cachedModel);
-    }, undefined, () => {
+    }, undefined, (err) => {
+      console.warn('Failed to load character model:', err);
       resolve(null);
     });
   });
@@ -318,6 +319,7 @@ export class Player {
 
   animate(dt, lateralGap) {
     const p = this.parts;
+    const usingModel = this.modelLoaded;
 
     if (this.state === SLIDING) {
       // A feet-first baseball slide: reclined onto the back, legs stretched out
@@ -335,11 +337,13 @@ export class Player {
       this.body.position.z += (-0.4 - this.body.position.z) * ease;
       // Legs run out ahead, staggered so one leads. Together with the reclined
       // torso this makes the long forward diagonal a slide is read by.
-      p.legL.rotation.x += (0.68 - p.legL.rotation.x) * ease;
-      p.legR.rotation.x += (0.45 - p.legR.rotation.x) * ease;
-      // Trailing arm swept back for balance, leading arm tucked across.
-      p.armL.rotation.x += (-0.72 - p.armL.rotation.x) * ease;
-      p.armR.rotation.x += (0.42 - p.armR.rotation.x) * ease;
+      if (!usingModel) {
+        p.legL.rotation.x += (0.68 - p.legL.rotation.x) * ease;
+        p.legR.rotation.x += (0.45 - p.legR.rotation.x) * ease;
+        // Trailing arm swept back for balance, leading arm tucked across.
+        p.armL.rotation.x += (-0.72 - p.armL.rotation.x) * ease;
+        p.armR.rotation.x += (0.42 - p.armR.rotation.x) * ease;
+      }
     } else {
       this.body.rotation.x += (0 - this.body.rotation.x) * Math.min(1, dt * 14);
       this.body.position.y += (0 - this.body.position.y) * Math.min(1, dt * 14);
@@ -347,24 +351,32 @@ export class Player {
 
       if (this.state === JUMPING) {
         const tuck = Math.min(1, dt * 12);
-        p.legL.rotation.x += (0.95 - p.legL.rotation.x) * tuck;
-        p.legR.rotation.x += (0.45 - p.legR.rotation.x) * tuck;
-        p.armL.rotation.x += (-1.1 - p.armL.rotation.x) * tuck;
-        p.armR.rotation.x += (-1.1 - p.armR.rotation.x) * tuck;
+        if (!usingModel) {
+          p.legL.rotation.x += (0.95 - p.legL.rotation.x) * tuck;
+          p.legR.rotation.x += (0.45 - p.legR.rotation.x) * tuck;
+          p.armL.rotation.x += (-1.1 - p.armL.rotation.x) * tuck;
+          p.armR.rotation.x += (-1.1 - p.armR.rotation.x) * tuck;
+        }
       } else {
         this.runPhase += dt * this.speed * 0.62;
-        const sw = Math.sin(this.runPhase);
-        p.legL.rotation.x = sw * 0.95;
-        p.legR.rotation.x = -sw * 0.95;
-        p.armR.rotation.x = sw * 0.75;
-        p.armL.rotation.x = -sw * 0.75;
+        if (!usingModel) {
+          const sw = Math.sin(this.runPhase);
+          p.legL.rotation.x = sw * 0.95;
+          p.legR.rotation.x = -sw * 0.95;
+          p.armR.rotation.x = sw * 0.75;
+          p.armL.rotation.x = -sw * 0.75;
+        }
       }
     }
 
     // The scarf streams out behind, harder the faster you are going.
-    const lift = Math.min(1.35, 0.4 + this.speed * 0.032);
-    p.scarf.rotation.x = lift + Math.sin(this.runPhase * 2) * 0.16;
-    p.scarf.rotation.z = lateralGap * 0.22 + Math.sin(this.runPhase * 1.4) * 0.1;
+    if (!usingModel) {
+      const lift = Math.min(1.35, 0.4 + this.speed * 0.032);
+      p.scarf.rotation.x = lift + Math.sin(this.runPhase * 2) * 0.16;
+      p.scarf.rotation.z = lateralGap * 0.22 + Math.sin(this.runPhase * 1.4) * 0.1;
+    } else {
+      this.runPhase += dt * this.speed * 0.62;
+    }
 
     // Bank into the lane change, and bob on the run cycle.
     this.body.rotation.z = lateralGap * -0.18;

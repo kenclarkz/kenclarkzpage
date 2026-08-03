@@ -44,12 +44,51 @@
       </div>
 
       <div id="overlay" hidden>
-        <div id="panel">
-          <h1 id="panel-title"></h1>
-          <div id="panel-body"></div>
-          <button id="panel-action" type="button"></button>
+        <section id="screen-home" class="screen">
+          <h1>Temple Runner</h1>
+          <p class="bank"><b class="bank-value">0</b> coins banked</p>
+          <button id="btn-play" class="primary" type="button">Play</button>
+          <button id="btn-store" type="button">Store</button>
+          <button id="btn-options" type="button">Options</button>
+          <p class="hint">
+            Swipe <b>left</b> / <b>right</b> to change lanes, <b>up</b> to jump,
+            <b>down</b> to slide. Corners turn on their own.
+          </p>
+          <p class="hint">
+            Hit something and the guardian gives chase &mdash; stay clean for ten
+            seconds to shake it off.
+          </p>
           <a id="back" href="index.html">&larr; back to the site</a>
-        </div>
+        </section>
+
+        <section id="screen-store" class="screen" hidden>
+          <h1>Store</h1>
+          <p class="bank"><b class="bank-value">0</b> coins</p>
+          <div id="store-list"></div>
+          <p class="hint">Coins you collect on a run are banked when it ends.</p>
+          <button id="btn-store-back" type="button">Back</button>
+        </section>
+
+        <section id="screen-options" class="screen" hidden>
+          <h1>Options</h1>
+          <button id="opt-music" type="button">Music: On</button>
+          <button id="opt-sfx" type="button">Sound effects: On</button>
+          <button id="opt-reset" type="button">Reset progress</button>
+          <button id="btn-options-back" class="primary" type="button">Back</button>
+        </section>
+
+        <section id="screen-paused" class="screen" hidden>
+          <h1>Paused</h1>
+          <button id="btn-resume" class="primary" type="button">Resume</button>
+          <button id="btn-quit" type="button">Quit to menu</button>
+        </section>
+
+        <section id="screen-result" class="screen" hidden>
+          <h1 id="result-title">Caught</h1>
+          <div id="result-body"></div>
+          <button id="btn-again" class="primary" type="button">Run again</button>
+          <button id="btn-result-home" type="button">Menu</button>
+        </section>
       </div>
 
       <div id="ios-hint" hidden>

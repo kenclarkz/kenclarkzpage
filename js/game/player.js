@@ -22,20 +22,10 @@ export const DEAD = 3;
 // degrees is the most lean that still shows a silhouette from back there.
 const SLIDE_PITCH = 0.65;
 
-const COL = {
-  skin: 0xd9a06b,
-  shirt: 0xb8392c,
-  shirtDark: 0x8e2a20,
-  pants: 0x2f4257,
-  boot: 0x3a2a1c,
-  hair: 0x5c3f26,
-  gold: 0xe8b849,
-  pack: 0x6b5334,
-  dark: 0x14100c,
-};
-
 // One material for the whole character: every part carries its colour in the
-// vertex attribute, so the pieces below cost nothing extra to author.
+// vertex attribute, so the pieces below cost nothing extra to author — and a
+// skin change is a geometry rebuild rather than a new material, which keeps
+// every skin on the same already-compiled shader.
 const SKIN_MAT = new THREE.MeshPhongMaterial({
   vertexColors: true,
   shininess: 12,
@@ -52,80 +42,71 @@ function limb(color, w, h, d, footColor, fw, fh, fd, fz) {
   return merge(parts, 1);
 }
 
-function buildCharacter() {
+/** Every geometry the character is made of, in one palette's colours. */
+function buildGeometries(c) {
+  return {
+    torso: merge(
+      [
+        box(c.shirt, 0.5, 0.7, 0.3, 0, 0, 0),
+        box(c.shirtDark, 0.58, 0.15, 0.32, 0, 0.3, 0),        // shoulder yoke
+        box(c.gold, 0.54, 0.09, 0.34, 0, -0.28, 0),            // belt
+        box(c.shirtDark, 0.13, 0.74, 0.33, 0.08, 0.02, 0, 0, 0, 0.32), // sash
+        box(c.pack, 0.3, 0.34, 0.14, 0, 0.06, 0.21),           // pack
+      ],
+      1
+    ),
+    head: merge(
+      [
+        box(c.skin, 0.36, 0.36, 0.34, 0, 0, 0),
+        box(c.hair, 0.38, 0.1, 0.36, 0, 0.205, 0.01),          // hair
+        box(c.gold, 0.4, 0.09, 0.38, 0, 0.125, 0),             // headband, sits
+        // proud of the hair so it catches the light from the camera's high angle
+        box(c.dark, 0.07, 0.07, 0.04, -0.09, 0.01, -0.17),     // eyes
+        box(c.dark, 0.07, 0.07, 0.04, 0.09, 0.01, -0.17),
+      ],
+      1
+    ),
+    arm: limb(c.skin, 0.16, 0.55, 0.16, c.skin, 0.19, 0.17, 0.19, 0),
+    leg: limb(c.pants, 0.2, 0.65, 0.2, c.boot, 0.24, 0.17, 0.3, -0.04),
+    // A trailing scarf. It costs one draw call and does more for the sense of
+    // speed than anything else on the character.
+    scarf: merge(
+      [
+        box(c.shirtDark, 0.22, 0.34, 0.08, 0, -0.17, 0),
+        box(c.shirt, 0.17, 0.3, 0.07, 0, -0.46, 0.02),
+      ],
+      1
+    ),
+  };
+}
+
+function buildCharacter(geos) {
   const root = new THREE.Group();
 
-  const torso = new THREE.Mesh(
-    merge(
-      [
-        box(COL.shirt, 0.5, 0.7, 0.3, 0, 0, 0),
-        box(COL.shirtDark, 0.58, 0.15, 0.32, 0, 0.3, 0),      // shoulder yoke
-        box(COL.gold, 0.54, 0.09, 0.34, 0, -0.28, 0),          // belt
-        box(COL.shirtDark, 0.13, 0.74, 0.33, 0.08, 0.02, 0, 0, 0, 0.32), // sash
-        box(COL.pack, 0.3, 0.34, 0.14, 0, 0.06, 0.21),         // pack
-      ],
-      1
-    ),
-    SKIN_MAT
-  );
-  torso.position.y = 1.0;
-  root.add(torso);
-
-  const head = new THREE.Mesh(
-    merge(
-      [
-        box(COL.skin, 0.36, 0.36, 0.34, 0, 0, 0),
-        box(COL.hair, 0.38, 0.1, 0.36, 0, 0.205, 0.01),        // hair
-        box(COL.gold, 0.4, 0.09, 0.38, 0, 0.125, 0),           // headband, sits
-        // proud of the hair so it catches the light from the camera's high angle
-        box(COL.dark, 0.07, 0.07, 0.04, -0.09, 0.01, -0.17),   // eyes
-        box(COL.dark, 0.07, 0.07, 0.04, 0.09, 0.01, -0.17),
-      ],
-      1
-    ),
-    SKIN_MAT
-  );
-  head.position.y = 1.53;
-  root.add(head);
-
-  const armGeo = limb(COL.skin, 0.16, 0.55, 0.16, COL.skin, 0.19, 0.17, 0.19, 0);
-  const legGeo = limb(COL.pants, 0.2, 0.65, 0.2, COL.boot, 0.24, 0.17, 0.3, -0.04);
-
-  const mk = (geo, x, y) => {
+  const mk = (geo, x, y, z = 0) => {
     const m = new THREE.Mesh(geo, SKIN_MAT);
-    m.position.set(x, y, 0);
+    m.position.set(x, y, z);
     root.add(m);
     return m;
   };
 
-  const armL = mk(armGeo, -0.33, 1.28);
-  const armR = mk(armGeo, 0.33, 1.28);
-  const legL = mk(legGeo, -0.14, 0.68);
-  const legR = mk(legGeo, 0.14, 0.68);
-
-  // A trailing scarf. It costs one draw call and does more for the sense of
-  // speed than anything else on the character.
-  const scarf = new THREE.Mesh(
-    merge(
-      [
-        box(COL.shirtDark, 0.22, 0.34, 0.08, 0, -0.17, 0),
-        box(COL.shirt, 0.17, 0.3, 0.07, 0, -0.46, 0.02),
-      ],
-      1
-    ),
-    SKIN_MAT
-  );
-  scarf.position.set(0, 1.36, 0.19);
-  root.add(scarf);
+  const torso = mk(geos.torso, 0, 1.0);
+  const head = mk(geos.head, 0, 1.53);
+  const armL = mk(geos.arm, -0.33, 1.28);
+  const armR = mk(geos.arm, 0.33, 1.28);
+  const legL = mk(geos.leg, -0.14, 0.68);
+  const legR = mk(geos.leg, 0.14, 0.68);
+  const scarf = mk(geos.scarf, 0, 1.36, 0.19);
 
   return { root, torso, head, armL, armR, legL, legR, scarf };
 }
 
 export class Player {
-  constructor() {
+  constructor(palette) {
     this.group = new THREE.Group();
 
-    const parts = buildCharacter();
+    this.geos = buildGeometries(palette);
+    const parts = buildCharacter(this.geos);
     this.parts = parts;
     this.body = parts.root;
     this.group.add(this.body);
@@ -158,10 +139,33 @@ export class Player {
     this.speed = C.SPEED_0;
     this.tumble = 0;
     this.stumbleTimer = 0;
+    this.onSound = this.onSound || null;
     this.body.rotation.set(0, 0, 0);
     this.body.position.set(0, 0, 0);
     this.group.position.set(0, 0, 0);
     this.shadow.visible = true;
+  }
+
+  /**
+   * Swap the character's palette. Rebuilds the merged geometries, since the
+   * colours live in a vertex attribute — the material is shared and untouched,
+   * so no shader is recompiled and no skin can stall a frame the way a new
+   * material would.
+   */
+  setSkin(palette) {
+    const next = buildGeometries(palette);
+    const p = this.parts;
+    p.torso.geometry = next.torso;
+    p.head.geometry = next.head;
+    p.armL.geometry = next.arm;
+    p.armR.geometry = next.arm;
+    p.legL.geometry = next.leg;
+    p.legR.geometry = next.leg;
+    p.scarf.geometry = next.scarf;
+    // Each entry is one geometry even where two meshes share it, so this
+    // disposes every outgoing buffer exactly once.
+    for (const g of Object.values(this.geos)) g.dispose();
+    this.geos = next;
   }
 
   get isSliding() {
@@ -177,12 +181,18 @@ export class Player {
     this.targetLane = Math.max(-1, Math.min(1, this.targetLane + delta));
   }
 
+  /** Set by main.js to route 'jump' | 'land' | 'slide' to the audio engine. */
+  cue(name) {
+    if (this.onSound) this.onSound(name);
+  }
+
   jump() {
     if (this.state === DEAD) return;
     if (this.state === JUMPING) return;
     this.state = JUMPING;
     this.vy = C.JUMP_VY;
     this.slideTimer = 0;
+    this.cue('jump');
   }
 
   slide() {
@@ -195,6 +205,7 @@ export class Player {
     }
     this.state = SLIDING;
     this.slideTimer = C.SLIDE_TIME;
+    this.cue('slide');
   }
 
   /** A glancing hit: costs speed and balance, but not the run. */
@@ -246,10 +257,12 @@ export class Player {
       if (this.y <= 0) {
         this.y = 0;
         this.vy = 0;
+        this.cue('land');
         if (this.slideOnLand) {
           this.slideOnLand = false;
           this.state = SLIDING;
           this.slideTimer = C.SLIDE_TIME;
+          this.cue('slide');
         } else {
           this.state = RUNNING;
         }

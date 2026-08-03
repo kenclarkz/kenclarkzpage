@@ -161,6 +161,7 @@ function showHome() {
   state = HOME;
   audio.stopMusic();
   hud.setBank(save.coins);
+  hud.setProfile(skinById(save.skin), save.best);
   hud.show('home');
 }
 

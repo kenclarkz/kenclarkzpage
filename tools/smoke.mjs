@@ -355,7 +355,7 @@ section('Home, store and options');
   const buyState = () =>
     shop.$$eval('#store-list .skin button', (b) => b.map((x) => ({ t: x.textContent, off: x.disabled })));
   let btns = await buyState();
-  ok(btns[0].t === 'Wearing' && btns[0].off, 'the default skin reads as worn');
+  ok(btns[0].t === 'Worn' && btns[0].off, 'the default skin reads as worn');
   ok(btns[1].t === 'Buy' && btns[1].off, 'a skin you cannot afford cannot be bought');
 
   // Bank enough for the second skin and reopen.
@@ -375,7 +375,7 @@ section('Home, store and options');
   }));
   ok(bought.owns && bought.coins === 300, `buying deducts the price (${bought.coins} left of 500)`);
   ok(bought.skin === 'jade', 'and equips what you just bought');
-  ok((await buyState())[1].t === 'Wearing', 'and the row updates to match');
+  ok((await buyState())[1].t === 'Worn', 'and the row updates to match');
 
   // Buying twice must not charge twice.
   await shop.$$eval('#store-list .skin button', (b) => b[0].click());

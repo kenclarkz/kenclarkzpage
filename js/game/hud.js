@@ -24,6 +24,9 @@ export class Hud {
 
     this.bankEls = Array.from(document.querySelectorAll('.bank-value'));
     this.storeList = document.getElementById('store-list');
+    this.avatarEl = document.getElementById('avatar');
+    this.profileName = document.getElementById('profile-name');
+    this.profileBest = document.getElementById('profile-best');
     this.resultTitle = document.getElementById('result-title');
     this.resultBody = document.getElementById('result-body');
 
@@ -128,6 +131,28 @@ export class Hud {
   }
 
   /**
+   * The home screen's profile card: who you are wearing, and your best run.
+   * The avatar is built from the equipped skin's own palette rather than from
+   * a set of pictures, so a new skin needs no new art here.
+   */
+  setProfile(skin, best) {
+    if (this.profileName) this.profileName.textContent = skin.name;
+    if (this.profileBest) this.profileBest.textContent = Math.floor(best).toLocaleString();
+    if (!this.avatarEl) return;
+
+    const hex = (v) => `#${v.toString(16).padStart(6, '0')}`;
+    const p = skin.palette;
+    this.avatarEl.textContent = '';
+    this.avatarEl.style.background = hex(p.skin);
+    for (const cls of ['av-hair', 'av-band', 'av-eye l', 'av-eye r']) {
+      const el = document.createElement('i');
+      el.className = cls;
+      el.style.background = hex(cls === 'av-hair' ? p.hair : cls === 'av-band' ? p.gold : p.dark);
+      this.avatarEl.appendChild(el);
+    }
+  }
+
+  /**
    * How much of the chase window is left, 0..1. Drives both the depleting bar
    * and the red edge glow — without some readout the ten seconds are invisible,
    * and the rule stops being something the player can actually play around.
@@ -229,13 +254,15 @@ export class Hud {
       const btn = document.createElement('button');
       btn.type = 'button';
       if (equipped) {
-        btn.textContent = 'Wearing';
+        btn.textContent = 'Worn';
         btn.disabled = true;
       } else if (owned) {
         btn.textContent = 'Wear';
+        btn.className = 'wear';
       } else {
         btn.textContent = 'Buy';
         btn.disabled = !afford;
+        if (afford) btn.className = 'buy';
       }
       btn.addEventListener('click', () => this.on.pick?.(skin.id));
       row.appendChild(btn);

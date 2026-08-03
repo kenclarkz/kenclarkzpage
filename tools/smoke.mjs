@@ -174,31 +174,19 @@ section('4-5. Input');
 // --------------------------------------------------------------------------
 section('7. Death paths');
 {
-  // Missing a corner kills you.
-  await page.evaluate(() => {
-    const g = window.__game;
-    g.start();
-    const arc = g.nextArc();
-    g.teleportTo(arc.s0 - 4);
-  });
-  await sleep(1500);
-  let r = await page.evaluate(() => ({ state: window.__game.state, why: window.__game.deathReason }));
-  ok(r.state === 'over' && r.why === 'missed-turn', `not turning at a corner kills you (${r.why})`);
-
-  // Swiping the right way takes it. Note this cannot assert on distances
-  // captured beforehand: rebasing shifts every path distance mid-run.
-  const took = await page.evaluate(async () => {
+  // Corners turn on their own, with no swipe required. Note this cannot assert
+  // on distances captured beforehand: rebasing shifts every path distance
+  // mid-run.
+  const auto = await page.evaluate(async () => {
     const g = window.__game;
     g.start();
     const arc = g.nextArc();
     g.teleportTo(arc.s0 - 5);
-    await new Promise((res) => setTimeout(res, 120));
-    g.emit(arc.dir === 1 ? 'left' : 'right');
     await new Promise((res) => setTimeout(res, 1500));
     return { state: g.state, why: g.deathReason, corners: g.cornersTaken };
   });
-  ok(took.why !== 'missed-turn', `swiping into the corner takes it (${took.why || 'alive'})`);
-  ok(took.corners >= 1, `and carries the player through and out the other side (${took.corners} corner)`);
+  ok(auto.state === 'playing', `a corner turns on its own with no swipe (${auto.state}, ${auto.why || 'alive'})`);
+  ok(auto.corners >= 1, `and carries the player through and out the other side (${auto.corners} corner)`);
 
   // Running into an obstacle kills you.
   const hit = await page.evaluate(async () => {

@@ -71,8 +71,7 @@ let state = MENU;
 let score = 0;
 let coins = 0;
 let best = loadHighScore();
-let armedArc = null;
-let turnCommitted = false;
+let lastArc = null;
 let cornersTaken = 0;
 let frames = 0;
 
@@ -85,8 +84,7 @@ function resetRun() {
   player.reset();
   score = 0;
   coins = 0;
-  armedArc = null;
-  turnCommitted = false;
+  lastArc = null;
   cornersTaken = 0;
   hud.setScore(0);
   hud.setCoins(0);
@@ -112,13 +110,9 @@ function finishRun() {
 }
 
 function showGameOverPanel() {
-  const reason =
-    player.deathReason === 'missed-turn'
-      ? 'You missed the turn.'
-      : 'You hit something.';
   hud.showPanel(
     'Wiped out',
-    `<p>${reason}</p><p class="big">${Math.floor(score).toLocaleString()}</p>
+    `<p>You hit something.</p><p class="big">${Math.floor(score).toLocaleString()}</p>
      <p class="sub">${coins} coins &middot; best ${best.toLocaleString()}</p>`,
     'Run again'
   );
@@ -128,54 +122,28 @@ function showMenu() {
   state = MENU;
   hud.showPanel(
     'Temple Runner',
-    `<p>Swipe <b>left</b> / <b>right</b> to change lanes, and to take corners.</p>
+    `<p>Swipe <b>left</b> / <b>right</b> to change lanes.</p>
      <p>Swipe <b>up</b> to jump, <b>down</b> to slide.</p>
-     <p class="sub">Miss a corner and you hit the wall.</p>`,
+     <p class="sub">Corners turn on their own &mdash; just watch for obstacles.</p>`,
     'Run'
   );
 }
 
 // --- turns ----------------------------------------------------------------
-function turnWindow() {
-  return Math.max(C.TURN_WINDOW_MIN, C.TURN_WINDOW_SECONDS * player.speed);
-}
-
-/**
- * A lateral swipe is either a turn or a lane change, never both. Inside a
- * corner's window a swipe matching the corner's direction is consumed as the
- * turn; everything else falls through to a lane change.
- */
+// Corners are followed automatically — the path itself bends, and the world
+// transform rotates around the player with no gesture required. A lateral
+// swipe always just changes lanes.
 function onLateral(dir) {
-  // Resolve the corner here rather than trusting `armedArc`, so a swipe that
-  // lands before the frame that arms it still counts.
-  const arc = track.path.nextArc(player.distance);
-  const alreadyTurned = arc === armedArc && turnCommitted;
-  if (arc && arc.dir === dir && !alreadyTurned) {
-    const from = arc.s0 - turnWindow();
-    const to = arc.s0 + C.TURN_WINDOW_AFTER;
-    if (player.distance >= from && player.distance <= to) {
-      armedArc = arc;
-      turnCommitted = true;
-      return;
-    }
-  }
   // path LEFT is +1; lanes run left(-1) to right(+1), hence the negation.
   player.moveLane(-dir);
 }
 
-function updateTurnGate() {
+/** Tracks how many corners the player has passed, for the HUD/score only. */
+function updateCorners() {
   const arc = track.path.nextArc(player.distance);
-  if (arc !== armedArc) {
-    if (armedArc && turnCommitted) cornersTaken++;
-    armedArc = arc;
-    turnCommitted = false;
-  }
-  if (arc && !turnCommitted && player.distance > arc.s0 + C.TURN_WINDOW_AFTER) {
-    // Snap back to the corner's entry so the heading is exactly the straight's,
-    // then freeze progress along the path. The player carries on in a straight
-    // line from there (see Player.overshoot) and hits the outer wall.
-    player.distance = arc.s0;
-    player.die('missed-turn');
+  if (arc !== lastArc) {
+    if (lastArc) cornersTaken++;
+    lastArc = arc;
   }
 }
 
@@ -195,9 +163,7 @@ function updateWorldTransform() {
   _q.setFromEuler(_e);
   _p.set(pose.x, 0, pose.z);
   _m.compose(_p, _q, _one);
-  // -Z is forward in the player's local frame, so overshoot carries them
-  // straight on after a missed turn freezes their path distance.
-  _lat.makeTranslation(player.lateral, 0, -player.overshoot);
+  _lat.makeTranslation(player.lateral, 0, 0);
   _m.multiply(_lat);
   _m.invert();
   _m.decompose(track.root.position, track.root.quaternion, track.root.scale);
@@ -207,7 +173,7 @@ function updateWorldTransform() {
 function step(dt) {
   if (state === PLAYING) {
     player.update(dt);
-    if (!player.isDead) updateTurnGate();
+    if (!player.isDead) updateCorners();
   } else if (state === OVER) {
     player.update(dt); // let the tumble play out
   }
@@ -216,7 +182,6 @@ function step(dt) {
   if (shift) {
     player.distance -= shift;
     entities.shift(shift);
-    if (armedArc && !track.path.nodes.includes(armedArc)) armedArc = null;
   }
 
   if (state === PLAYING && !player.isDead) {
@@ -454,8 +419,7 @@ window.__game = {
       total += shift;
       if (++guard > 5000) break;
     }
-    armedArc = null;
-    turnCommitted = false;
+    lastArc = null;
     entities.refresh(track.path);
     updateWorldTransform();
     return total;

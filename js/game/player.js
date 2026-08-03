@@ -14,13 +14,21 @@ export const JUMPING = 1;
 export const SLIDING = 2;
 export const DEAD = 3;
 
+// How far back the runner reclines in a slide, in radians. Positive pitches
+// backwards; see the note in animate().
+//
+// Kept well short of horizontal on purpose. The camera sits above and behind,
+// so a fully flat slide foreshortens into an unreadable blob — around 35
+// degrees is the most lean that still shows a silhouette from back there.
+const SLIDE_PITCH = 0.65;
+
 const COL = {
   skin: 0xd9a06b,
   shirt: 0xb8392c,
   shirtDark: 0x8e2a20,
   pants: 0x2f4257,
   boot: 0x3a2a1c,
-  hair: 0x2a1c12,
+  hair: 0x5c3f26,
   gold: 0xe8b849,
   pack: 0x6b5334,
   dark: 0x14100c,
@@ -67,8 +75,9 @@ function buildCharacter() {
     merge(
       [
         box(COL.skin, 0.36, 0.36, 0.34, 0, 0, 0),
-        box(COL.hair, 0.38, 0.14, 0.36, 0, 0.19, 0.01),        // hair
-        box(COL.gold, 0.39, 0.07, 0.37, 0, 0.09, 0),           // headband
+        box(COL.hair, 0.38, 0.1, 0.36, 0, 0.205, 0.01),        // hair
+        box(COL.gold, 0.4, 0.09, 0.38, 0, 0.125, 0),           // headband, sits
+        // proud of the hair so it catches the light from the camera's high angle
         box(COL.dark, 0.07, 0.07, 0.04, -0.09, 0.01, -0.17),   // eyes
         box(COL.dark, 0.07, 0.07, 0.04, 0.09, 0.01, -0.17),
       ],
@@ -148,6 +157,7 @@ export class Player {
     this.runPhase = 0;
     this.speed = C.SPEED_0;
     this.tumble = 0;
+    this.stumbleTimer = 0;
     this.body.rotation.set(0, 0, 0);
     this.body.position.set(0, 0, 0);
     this.group.position.set(0, 0, 0);
@@ -187,6 +197,16 @@ export class Player {
     this.slideTimer = C.SLIDE_TIME;
   }
 
+  /** A glancing hit: costs speed and balance, but not the run. */
+  stumble() {
+    if (this.state === DEAD) return;
+    this.stumbleTimer = C.STUMBLE_TIME;
+  }
+
+  get isStumbling() {
+    return this.stumbleTimer > 0;
+  }
+
   die(reason) {
     if (this.state === DEAD) return;
     this.state = DEAD;
@@ -205,7 +225,13 @@ export class Player {
       return;
     }
 
-    this.speed = Math.min(C.SPEED_MAX, C.SPEED_0 + this.distance * C.SPEED_RAMP);
+    let speed = Math.min(C.SPEED_MAX, C.SPEED_0 + this.distance * C.SPEED_RAMP);
+    if (this.stumbleTimer > 0) {
+      // Losing ground is the point: this is what lets the guardian close in.
+      this.stumbleTimer = Math.max(0, this.stumbleTimer - dt);
+      speed *= C.STUMBLE_SPEED;
+    }
+    this.speed = speed;
     this.distance += this.speed * dt;
 
     // Lateral is an independent tween rather than a state, so a lane change can
@@ -240,16 +266,30 @@ export class Player {
     const p = this.parts;
 
     if (this.state === SLIDING) {
-      this.body.rotation.x += (-1.15 - this.body.rotation.x) * Math.min(1, dt * 18);
-      this.body.position.y += (0.32 - this.body.position.y) * Math.min(1, dt * 18);
-      const tuck = Math.min(1, dt * 16);
-      p.legL.rotation.x += (0.35 - p.legL.rotation.x) * tuck;
-      p.legR.rotation.x += (0.2 - p.legR.rotation.x) * tuck;
-      p.armL.rotation.x += (-0.5 - p.armL.rotation.x) * tuck;
-      p.armR.rotation.x += (-0.5 - p.armR.rotation.x) * tuck;
+      // A feet-first baseball slide: reclined onto the back, legs stretched out
+      // ahead. rotation.x is *positive* here — negative pitches the body
+      // forward, which is the direction the death tumble uses, and is what made
+      // this read as a dive.
+      //
+      // Rotating about the origin swings the whole body backwards as it tips,
+      // so position.z pushes forward to keep the runner roughly in place.
+      const ease = Math.min(1, dt * 16);
+      this.body.rotation.x += (SLIDE_PITCH - this.body.rotation.x) * ease;
+      // Drop the hips as well as tipping them, so it reads as going low rather
+      // than just leaning.
+      this.body.position.y += (-0.26 - this.body.position.y) * ease;
+      this.body.position.z += (-0.4 - this.body.position.z) * ease;
+      // Legs run out ahead, staggered so one leads. Together with the reclined
+      // torso this makes the long forward diagonal a slide is read by.
+      p.legL.rotation.x += (0.68 - p.legL.rotation.x) * ease;
+      p.legR.rotation.x += (0.45 - p.legR.rotation.x) * ease;
+      // Trailing arm swept back for balance, leading arm tucked across.
+      p.armL.rotation.x += (-0.72 - p.armL.rotation.x) * ease;
+      p.armR.rotation.x += (0.42 - p.armR.rotation.x) * ease;
     } else {
       this.body.rotation.x += (0 - this.body.rotation.x) * Math.min(1, dt * 14);
       this.body.position.y += (0 - this.body.position.y) * Math.min(1, dt * 14);
+      this.body.position.z += (0 - this.body.position.z) * Math.min(1, dt * 14);
 
       if (this.state === JUMPING) {
         const tuck = Math.min(1, dt * 12);
@@ -274,6 +314,15 @@ export class Player {
 
     // Bank into the lane change, and bob on the run cycle.
     this.body.rotation.z = lateralGap * -0.18;
+
+    // A stumble rides on top of whatever pose is current, so it reads the same
+    // whether it lands mid-run, mid-jump or mid-slide.
+    if (this.stumbleTimer > 0) {
+      const k = this.stumbleTimer / C.STUMBLE_TIME;
+      const swing = Math.sin(k * Math.PI);
+      this.body.rotation.x -= swing * 0.42;
+      this.body.rotation.z += Math.sin(k * Math.PI * 3) * 0.16;
+    }
     const bob = this.state === RUNNING ? Math.abs(Math.cos(this.runPhase)) * 0.06 : 0;
     this.group.position.y = this.y + bob;
 

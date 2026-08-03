@@ -27,6 +27,9 @@ export class Hud {
     this.coinsEl = document.getElementById('coins');
     this.bestEl = document.getElementById('best');
     this.debugEl = document.getElementById('debug');
+    this.chaseEl = document.getElementById('chase');
+    this.chaseBar = document.getElementById('chase-bar');
+    this._chase = -1;
 
     this.overlay = document.getElementById('overlay');
     this.panelTitle = document.getElementById('panel-title');
@@ -59,6 +62,28 @@ export class Hud {
     if (n === this._best) return;
     this._best = n;
     this.bestEl.textContent = n.toLocaleString();
+  }
+
+  /**
+   * How much of the chase window is left, 0..1. Drives both the depleting bar
+   * and the red edge glow — without some readout the ten seconds are invisible,
+   * and the rule stops being something the player can actually play around.
+   */
+  setChase(t) {
+    const v = Math.max(0, Math.min(1, t));
+    // The 0 and 1 ends always go through: they are what show and hide the
+    // warning, and skipping one on a rounding coincidence would strand it
+    // on screen for the rest of the run.
+    if (v > 0 && Math.abs(v - this._chase) < 0.005) return;
+    if (v === this._chase) return;
+    const wasOn = this._chase > 0;
+    this._chase = v;
+    if (v > 0) {
+      if (!wasOn) this.chaseEl.hidden = false;
+      this.chaseBar.style.transform = `scaleX(${v})`;
+    } else if (wasOn) {
+      this.chaseEl.hidden = true;
+    }
   }
 
   showPanel(title, body, action) {

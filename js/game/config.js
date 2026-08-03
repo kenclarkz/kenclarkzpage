@@ -28,6 +28,16 @@ export const SLIDE_TIME = 0.55;
 export const LATERAL_EASE = 17;     // higher = snappier lane changes
 export const PLAYER_HALF_W = 0.42;  // collider half-width
 
+// --- the chase ------------------------------------------------------------
+// Hitting something does not end the run: it puts the guardian on your heels.
+// Survive CHASE_SECONDS without hitting anything else and you pull away; hit
+// something while it is still back there and it has you.
+export const CHASE_SECONDS = 10;
+export const CHASE_RECEDE = 1.3;    // seconds it takes to drop out of sight
+export const POUNCE_TIME = 0.55;    // the catch animation, before the panel
+export const STUMBLE_TIME = 0.5;    // how long a glancing hit costs you
+export const STUMBLE_SPEED = 0.62;  // speed multiplier while stumbling
+
 // --- streaming ------------------------------------------------------------
 export const SPAWN_AHEAD = 135;     // must exceed FOG_FAR
 export const RETIRE_BEHIND = 25;

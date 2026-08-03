@@ -193,36 +193,87 @@ section('7. Death paths');
   // Corners turn on their own, with no swipe required. Note this cannot assert
   // on distances captured beforehand: rebasing shifts every path distance
   // mid-run.
-  const auto = await page.evaluate(async () => {
+  await page.evaluate(() => {
     const g = window.__game;
     g.start();
-    const arc = g.nextArc();
-    g.teleportTo(arc.s0 - 5);
-    await new Promise((res) => setTimeout(res, 1500));
-    return { state: g.state, why: g.deathReason, corners: g.cornersTaken };
+    g.teleportTo(g.nextArc().s0 - 5);
   });
+  // Poll rather than sleeping a fixed time. Under a software rasteriser the
+  // frame time regularly exceeds MAX_FRAME_DT, so the clamped accumulator
+  // simulates noticeably less than wall clock — a fixed sleep here is really a
+  // bet on the renderer's speed.
+  const tookCorner = await page
+    .waitForFunction(() => window.__game.cornersTaken >= 1 || window.__game.state !== 'playing', null, {
+      timeout: 20000,
+    })
+    .then(() => true)
+    .catch(() => false);
+  const auto = await page.evaluate(() => ({
+    state: window.__game.state,
+    why: window.__game.deathReason,
+    corners: window.__game.cornersTaken,
+  }));
   ok(auto.state === 'playing', `a corner turns on its own with no swipe (${auto.state}, ${auto.why || 'alive'})`);
-  ok(auto.corners >= 1, `and carries the player through and out the other side (${auto.corners} corner)`);
+  ok(tookCorner && auto.corners >= 1, `and carries the player through and out the other side (${auto.corners} corner)`);
 
-  // Running into an obstacle kills you.
-  const hit = await page.evaluate(async () => {
-    const g = window.__game;
-    g.start();
-    // Look for a wide obstacle so no lane alignment is needed.
-    for (let i = 0; i < 40; i++) {
-      const o = g.nextObstacle();
-      if (o && (o.kind === 1 || o.kind === 2)) {
-        g.teleportTo(o.s - 4);
-        await new Promise((res) => setTimeout(res, 1200));
-        return { state: g.state, why: g.deathReason, kind: o.kind };
+  // Drives the player into the next wide obstacle (BARRIER or BEAM, so no lane
+  // alignment is needed) and reports what happened.
+  const runIntoObstacle = (p) =>
+    p.evaluate(async () => {
+      const g = window.__game;
+      for (let i = 0; i < 40; i++) {
+        const o = g.nextObstacle();
+        if (o && (o.kind === 1 || o.kind === 2)) {
+          g.teleportTo(o.s - 4);
+          await new Promise((res) => setTimeout(res, 1000));
+          return { state: g.state, why: g.deathReason, chasing: g.chasing };
+        }
+        g.teleportTo(g.distance + 20);
       }
-      g.teleportTo(g.distance + 20);
-    }
-    return { state: 'none', why: 'no obstacle found' };
-  });
-  ok(hit.state === 'over' && hit.why === 'hit', `running into an obstacle kills you (${hit.why})`);
+      return { state: 'none', why: 'no obstacle found' };
+    });
+
+  // The first hit starts the chase instead of ending the run.
+  await page.evaluate(() => window.__game.start());
+  const first = await runIntoObstacle(page);
+  ok(first.state === 'playing', `the first hit does not end the run (${first.state})`);
+  ok(first.chasing > 0, `and puts the guardian on your heels (${first.chasing.toFixed(1)} s left)`);
+
+  // A second hit inside that window does.
+  const second = await runIntoObstacle(page);
+  ok(second.state === 'over' && second.why === 'caught', `a second hit while chased is fatal (${second.why})`);
 
   await page.screenshot({ path: join(SHOTS, 'gameover.png') });
+
+  // Staying clean for the full window shakes it off, and a hit after that is
+  // survivable again — otherwise "outrun him" would be cosmetic only.
+  await page.evaluate(() => {
+    const g = window.__game;
+    g.start();
+    g.startChase();
+    // Sweep the track clear while this runs. Ten seconds at 15 m/s is 150 m of
+    // obstacles and nobody is steering, so without this the runner is caught
+    // every time — which would be the game working correctly, and would tell us
+    // nothing about whether the window ever closes.
+    window.__sweep = setInterval(() => {
+      for (const it of g.entities.items) if (it.kind !== 0) it.alive = false;
+      g.entities.dirty = true;
+    }, 40);
+  });
+  // Same again: the window is ten *simulated* seconds, which is longer than ten
+  // wall-clock seconds whenever frames run long.
+  const shookOff = await page
+    .waitForFunction(() => window.__game.chasing === 0 || window.__game.state !== 'playing', null, { timeout: 45000 })
+    .then(() => true)
+    .catch(() => false);
+  const outran = await page.evaluate(() => {
+    clearInterval(window.__sweep);
+    return { chasing: window.__game.chasing, state: window.__game.state };
+  });
+  ok(
+    shookOff && outran.chasing === 0 && outran.state === 'playing',
+    `surviving the window outruns it (${outran.chasing.toFixed(1)} s left, ${outran.state})`
+  );
 }
 
 // --------------------------------------------------------------------------

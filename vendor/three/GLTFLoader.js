@@ -65,8 +65,6 @@ import {
 	SRGBColorSpace,
 	InstancedBufferAttribute
 } from './three.js';
-import { toTrianglesDrawMode } from '../utils/BufferGeometryUtils.js';
-import { clone } from '../utils/SkeletonUtils.js';
 
 /**
  * A loader for the glTF 2.0 format.
@@ -3856,11 +3854,9 @@ class GLTFParser {
 
 					if ( primitive.mode === WEBGL_CONSTANTS.TRIANGLE_STRIP ) {
 
-						mesh.geometry = toTrianglesDrawMode( mesh.geometry, TriangleStripDrawMode );
 
 					} else if ( primitive.mode === WEBGL_CONSTANTS.TRIANGLE_FAN ) {
 
-						mesh.geometry = toTrianglesDrawMode( mesh.geometry, TriangleFanDrawMode );
 
 					}
 

@@ -6,12 +6,23 @@
 // here only ever animates in place.
 
 import * as THREE from './three.js';
-import { GLTFLoader } from './loaders.js';
 import { box, merge } from './geo.js';
 import * as C from './config.js';
 
-const gltfLoader = new GLTFLoader();
+let gltfLoader = null;
 let cachedModel = null;
+
+async function getGLTFLoader() {
+  if (gltfLoader) return gltfLoader;
+  try {
+    const { GLTFLoader: Loader } = await import('./loaders.js');
+    gltfLoader = new Loader();
+    return gltfLoader;
+  } catch (e) {
+    console.warn('Could not load GLTFLoader:', e);
+    return null;
+  }
+}
 
 export const RUNNING = 0;
 export const JUMPING = 1;
@@ -84,10 +95,12 @@ function buildGeometries(c) {
   };
 }
 
-function loadModelAsync() {
-  if (cachedModel) return Promise.resolve(cachedModel);
+async function loadModelAsync() {
+  if (cachedModel) return cachedModel;
+  const loader = await getGLTFLoader();
+  if (!loader) return null;
   return new Promise((resolve) => {
-    gltfLoader.load('vendor/models/character.glb', (gltf) => {
+    loader.load('vendor/models/character.glb', (gltf) => {
       cachedModel = gltf.scene;
       resolve(cachedModel);
     }, undefined, (err) => {
@@ -146,7 +159,8 @@ export class Player {
   }
 
   loadModel() {
-    loadModelAsync().then((model) => {
+    (async () => {
+      const model = await loadModelAsync();
       if (!model) return;
       const modelCopy = model.clone();
       modelCopy.traverse((node) => {
@@ -162,7 +176,7 @@ export class Player {
       this.group.remove(this.body);
       this.group.add(this.modelBody);
       this.body = this.modelBody;
-    });
+    })();
   }
 
   reset() {

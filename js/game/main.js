@@ -10,10 +10,15 @@ import { Player } from './player.js';
 import { Monster } from './monster.js';
 import { Atmosphere } from './atmosphere.js';
 import * as Input from './input.js';
-import { Hud, loadHighScore, saveHighScore } from './hud.js';
+import { Hud } from './hud.js';
+import { save } from './save.js';
+import { skinById } from './skins.js';
+import { Audio } from './audio.js';
 import { registerServiceWorker, setupInstall, isInstalled } from './pwa.js';
 
-const MENU = 'menu';
+const HOME = 'home';
+const STORE = 'store';
+const OPTIONS = 'options';
 const PLAYING = 'playing';
 const PAUSED = 'paused';
 const OVER = 'over';
@@ -67,7 +72,7 @@ const track = new Track(
 track.root.add(entities.group);
 scene.add(track.root);
 
-const player = new Player();
+const player = new Player(skinById(save.skin).palette);
 scene.add(player.group);
 
 const monster = new Monster();
@@ -76,15 +81,18 @@ scene.add(monster.group);
 const hud = new Hud();
 if (DEBUG) hud.enableDebug();
 
+const audio = new Audio(save.music, save.sfx);
+player.onSound = (name) => audio[name]?.();
+
 // --- state ----------------------------------------------------------------
-let state = MENU;
+let state = HOME;
 let score = 0;
 let coins = 0;
-let best = loadHighScore();
 let lastArc = null;
 let cornersTaken = 0;
 let frames = 0;
 let elapsed = 0; // drives the coin spin and the torch flicker
+let runWasBest = false;
 
 // The chase. `timer` counts down the window in which another hit is fatal;
 // `receding` is the tail where the guardian drops back and you are already
@@ -92,7 +100,8 @@ let elapsed = 0; // drives the coin spin and the torch flicker
 const chase = { timer: 0, arrive: 0, receding: 0, pounce: 0 };
 const chaseActive = () => chase.timer > 0;
 
-hud.setBest(best);
+hud.setBest(save.best);
+hud.setBank(save.coins);
 
 function resetRun() {
   rngState.fn = C.makeRng(SEED);
@@ -120,44 +129,90 @@ function resetRun() {
 function startGame() {
   resetRun();
   state = PLAYING;
-  hud.hidePanel();
+  hud.hide();
+  audio.setChase(false);
+  audio.setIntensity(0);
+  audio.startMusic();
 }
 
 function finishRun() {
   state = OVER;
   // updateChase stops running once the player is dead, so the warning has to be
-  // cleared here or it would sit over the game-over panel.
+  // cleared here or it would sit over the result screen.
   chase.timer = 0;
   chase.receding = 0;
   hud.setChase(0);
-  if (score > best) {
-    best = Math.floor(score);
-    saveHighScore(best);
-    hud.setBest(best);
+  audio.setChase(false);
+  audio.stopMusic();
+
+  // Coins are banked at the end of a run, not as they are picked up: dying
+  // should still pay out, but a run in progress should not be spendable.
+  save.addCoins(coins);
+  hud.setBank(save.coins);
+  runWasBest = save.recordScore(score);
+  hud.setBest(save.best);
+}
+
+function showResult() {
+  hud.showResult('Caught', score, coins, save.best, runWasBest);
+}
+
+function showHome() {
+  state = HOME;
+  audio.stopMusic();
+  hud.setBank(save.coins);
+  hud.show('home');
+}
+
+function showStore() {
+  state = STORE;
+  hud.setBank(save.coins);
+  hud.renderStore(save);
+  hud.show('store');
+}
+
+function showOptions() {
+  state = OPTIONS;
+  hud.setOptions(save.music, save.sfx);
+  hud.show('options');
+}
+
+// --- screens --------------------------------------------------------------
+hud.on.play = () => startGame();
+hud.on.store = () => showStore();
+hud.on.options = () => showOptions();
+hud.on.home = () => showHome();
+hud.on.resume = () => togglePause();
+hud.on.pick = (id) => {
+  const skin = skinById(id);
+  // Buying equips in one step, so both paths end the same way.
+  if (save.owns(id) ? save.equip(id) : save.buy(id, skin.price)) {
+    player.setSkin(skin.palette);
+    audio.coin();
   }
-}
-
-function showGameOverPanel() {
-  hud.showPanel(
-    'Caught',
-    `<p>The guardian had you.</p><p class="big">${Math.floor(score).toLocaleString()}</p>
-     <p class="sub">${coins} coins &middot; best ${best.toLocaleString()}</p>`,
-    'Run again'
-  );
-}
-
-function showMenu() {
-  state = MENU;
-  hud.showPanel(
-    'Temple Runner',
-    `<p>Swipe <b>left</b> / <b>right</b> to change lanes.</p>
-     <p>Swipe <b>up</b> to jump, <b>down</b> to slide.</p>
-     <p>Hit something and the <b>guardian</b> gives chase. Stay clean for
-        ten seconds to outrun it &mdash; hit anything before then and it has you.</p>
-     <p class="sub">Corners turn on their own.</p>`,
-    'Run'
-  );
-}
+  hud.setBank(save.coins);
+  hud.renderStore(save);
+};
+hud.on.toggleMusic = () => {
+  save.setMusic(!save.music);
+  audio.setMusic(save.music);
+  hud.setOptions(save.music, save.sfx);
+};
+hud.on.toggleSfx = () => {
+  save.setSfx(!save.sfx);
+  audio.setSfx(save.sfx);
+  hud.setOptions(save.music, save.sfx);
+  if (save.sfx) audio.coin(); // so the toggle demonstrates itself
+};
+hud.on.reset = () => {
+  save.reset();
+  player.setSkin(skinById(save.skin).palette);
+  audio.setMusic(save.music);
+  audio.setSfx(save.sfx);
+  hud.setBest(save.best);
+  hud.setBank(save.coins);
+  hud.setOptions(save.music, save.sfx);
+};
 
 // --- turns ----------------------------------------------------------------
 // Corners are followed automatically — the path itself bends, and the world
@@ -177,9 +232,13 @@ function onLateral(dir) {
 function onObstacleHit() {
   if (chaseActive()) {
     chase.pounce = C.POUNCE_TIME;
+    audio.caught();
     player.die('caught');
     return;
   }
+  audio.hit();
+  audio.roar();
+  audio.setChase(true);
   // Start the run-in from wherever it currently is, so a hit taken while it is
   // still dropping back closes the gap rather than snapping it backwards.
   chase.arrive = chaseNearness();
@@ -195,7 +254,10 @@ function updateChase(dt) {
     // Charge into frame instead of appearing at full size.
     chase.arrive = Math.min(1, chase.arrive + dt / C.CHASE_ARRIVE);
     // Outrun it: hand over to the recede tail, where you are already safe.
-    if (chase.timer === 0) chase.receding = C.CHASE_RECEDE;
+    if (chase.timer === 0) {
+      chase.receding = C.CHASE_RECEDE;
+      audio.setChase(false);
+    }
   } else if (chase.receding > 0) {
     chase.receding = Math.max(0, chase.receding - dt);
   }
@@ -261,7 +323,9 @@ function step(dt) {
     if (got) {
       coins += got;
       hud.setCoins(coins);
+      audio.coin();
     }
+    audio.setIntensity((player.speed - C.SPEED_0) / (C.SPEED_MAX - C.SPEED_0));
     score = player.distance * C.POINTS_PER_METRE + coins * C.COIN_VALUE;
     hud.setScore(score);
   }
@@ -290,7 +354,7 @@ function step(dt) {
   // The panel waits for the crash to play out, so the player sees what killed
   // them rather than a menu appearing over a frozen frame.
   if (state === PLAYING && player.isDead) finishRun();
-  if (state === OVER && player.settled && !hud.panelVisible) showGameOverPanel();
+  if (state === OVER && player.settled && !hud.visible) showResult();
 }
 
 function updateCamera(dt) {
@@ -375,10 +439,12 @@ window.visualViewport?.addEventListener('resize', scheduleResize);
 function togglePause() {
   if (state === PLAYING) {
     state = PAUSED;
-    hud.showPanel('Paused', '<p class="sub">Take your time.</p>', 'Resume');
+    audio.stopMusic();
+    hud.show('paused');
   } else if (state === PAUSED) {
     state = PLAYING;
-    hud.hidePanel();
+    hud.hide();
+    audio.startMusic();
   }
 }
 
@@ -400,8 +466,7 @@ function emit(action) {
       togglePause();
       break;
     case Input.TAP:
-      if (state === MENU || state === OVER) startGame();
-      else if (state === PAUSED) togglePause();
+      if (state === PAUSED) togglePause();
       break;
   }
 }
@@ -415,14 +480,22 @@ overlayEl.style.pointerEvents = 'auto';
 for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
   overlayEl.addEventListener(type, (e) => e.stopPropagation());
 }
-overlayEl.addEventListener('click', (e) => {
-  if (e.target.id === 'back') return; // let the link navigate
-  if (state === PAUSED) togglePause();
-  else startGame();
-});
+// The screens have real buttons now, so the overlay no longer starts a run on
+// any click — a stray tap while reading the store should not launch you.
+
+// Audio has to be created inside a user gesture or mobile Safari leaves the
+// context suspended for the whole session, and it can be suspended again by the
+// OS at any point, so every gesture routes here. Capture phase, so it still
+// runs for taps the game itself consumes.
+for (const type of ['pointerdown', 'keydown']) {
+  document.addEventListener(type, () => audio.unlock(), { capture: true, passive: true });
+}
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && state === PLAYING) togglePause();
+  // Leaving the tab with music playing and coming back to it still playing is
+  // fine; leaving it playing while the tab is hidden is not.
+  else if (document.hidden) audio.stopMusic();
 });
 
 // --- loop -----------------------------------------------------------------
@@ -471,7 +544,7 @@ renderer.render(scene, camera);
 monster.group.visible = false;
 renderer.render(scene, camera);
 
-showMenu();
+showHome();
 requestAnimationFrame(frame);
 
 registerServiceWorker();
@@ -527,6 +600,9 @@ window.__game = {
   track,
   entities,
   atmosphere,
+  audio,
+  save,
+  hud,
   scene,
   camera,
   renderer,

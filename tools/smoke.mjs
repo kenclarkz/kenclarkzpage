@@ -330,6 +330,171 @@ section('6. Determinism');
 }
 
 // --------------------------------------------------------------------------
+section('Home, store and options');
+{
+  // A fresh context, because the store is backed by localStorage and the runs
+  // above have already banked coins into it.
+  const shopCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const shop = await shopCtx.newPage();
+  const shopErrors = [];
+  shop.on('pageerror', (e) => shopErrors.push(e.message));
+  shop.on('console', (m) => m.type() === 'error' && shopErrors.push(m.text()));
+  await shop.goto(`${BASE}/game.html`, { waitUntil: 'load' });
+  await shop.waitForFunction(() => !!window.__game, null, { timeout: 15000 });
+
+  const shown = () => shop.evaluate(() => window.__game.hud.current);
+  ok((await shown()) === 'home', 'boots to the home screen');
+  ok((await shop.evaluate(() => window.__game.state)) === 'home', 'and is not running a game behind it');
+
+  // Everything below drives the real buttons, so the wiring is under test too.
+  await shop.click('#btn-store');
+  ok((await shown()) === 'store', 'Store opens the store');
+  const rows = await shop.$$eval('#store-list .skin', (n) => n.length);
+  ok(rows === 5, `lists every skin (${rows})`);
+
+  const buyState = () =>
+    shop.$$eval('#store-list .skin button', (b) => b.map((x) => ({ t: x.textContent, off: x.disabled })));
+  let btns = await buyState();
+  ok(btns[0].t === 'Wearing' && btns[0].off, 'the default skin reads as worn');
+  ok(btns[1].t === 'Buy' && btns[1].off, 'a skin you cannot afford cannot be bought');
+
+  // Bank enough for the second skin and reopen.
+  await shop.evaluate(() => {
+    window.__game.save.addCoins(500);
+    window.__game.hud.renderStore(window.__game.save);
+    window.__game.hud.setBank(window.__game.save.coins);
+  });
+  btns = await buyState();
+  ok(!btns[1].off, 'and can be bought once you can afford it');
+
+  await shop.$$eval('#store-list .skin button', (b) => b[1].click());
+  const bought = await shop.evaluate(() => ({
+    coins: window.__game.save.coins,
+    skin: window.__game.save.skin,
+    owns: window.__game.save.owns('jade'),
+  }));
+  ok(bought.owns && bought.coins === 300, `buying deducts the price (${bought.coins} left of 500)`);
+  ok(bought.skin === 'jade', 'and equips what you just bought');
+  ok((await buyState())[1].t === 'Wearing', 'and the row updates to match');
+
+  // Buying twice must not charge twice.
+  await shop.$$eval('#store-list .skin button', (b) => b[0].click());
+  await shop.$$eval('#store-list .skin button', (b) => b[1].click());
+  const reworn = await shop.evaluate(() => ({ coins: window.__game.save.coins, skin: window.__game.save.skin }));
+  ok(reworn.coins === 300 && reworn.skin === 'jade', 'wearing an owned skin again is free');
+
+  await shop.click('#btn-store-back');
+  ok((await shown()) === 'home', 'Back returns to the home screen');
+
+  await shop.click('#btn-options');
+  ok((await shown()) === 'options', 'Options opens options');
+  await shop.click('#opt-music');
+  ok((await shop.evaluate(() => window.__game.save.music)) === false, 'music can be turned off');
+  await shop.click('#opt-sfx');
+  ok((await shop.evaluate(() => window.__game.save.sfx)) === false, 'sound effects can be turned off');
+
+  // Settings must outlive a reload, or the toggles are decorative.
+  await shop.reload({ waitUntil: 'load' });
+  await shop.waitForFunction(() => !!window.__game, null, { timeout: 15000 });
+  const persisted = await shop.evaluate(() => ({
+    music: window.__game.save.music,
+    sfx: window.__game.save.sfx,
+    skin: window.__game.save.skin,
+    coins: window.__game.save.coins,
+  }));
+  ok(!persisted.music && !persisted.sfx, 'settings survive a reload');
+  ok(persisted.skin === 'jade' && persisted.coins === 300, 'so do the coins and the equipped skin');
+
+  await shop.click('#btn-options');
+  await shop.click('#opt-reset');
+  await shop.click('#opt-reset'); // the confirm tap
+  const wiped = await shop.evaluate(() => ({
+    coins: window.__game.save.coins,
+    skin: window.__game.save.skin,
+    best: window.__game.save.best,
+  }));
+  ok(wiped.coins === 0 && wiped.skin === 'explorer' && wiped.best === 0, 'reset clears progress');
+
+  await shop.click('#btn-options-back');
+  await shop.click('#btn-play');
+  ok((await shop.evaluate(() => window.__game.state)) === 'playing', 'Play starts a run');
+  ok(!(await shop.evaluate(() => window.__game.hud.visible)), 'and clears the menu');
+
+  // Play it out to a death, so the run-end path is covered end to end: the
+  // result screen, and coins moving from the run into the bank.
+  for (let i = 0; i < 2; i++) {
+    await shop.evaluate(async () => {
+      const g = window.__game;
+      for (let n = 0; n < 40; n++) {
+        const o = g.nextObstacle();
+        if (o && (o.kind === 1 || o.kind === 2)) {
+          g.teleportTo(o.s - 3);
+          return;
+        }
+        g.teleportTo(g.distance + 20);
+      }
+    });
+    await shop
+      .waitForFunction((want) => window.__game.chasing > 0 || window.__game.state === want, 'over', { timeout: 15000 })
+      .catch(() => {});
+  }
+  await shop.waitForFunction(() => window.__game.hud.current === 'result', null, { timeout: 15000 }).catch(() => {});
+  const ended = await shop.evaluate(() => ({
+    screen: window.__game.hud.current,
+    state: window.__game.state,
+    banked: window.__game.save.coins,
+    best: window.__game.save.best,
+  }));
+  ok(ended.screen === 'result' && ended.state === 'over', `dying shows the result screen (${ended.screen})`);
+  ok(ended.best > 0, `and records the score (best ${ended.best})`);
+  ok(ended.banked >= 0, `and banks the run's coins (${ended.banked})`);
+
+  ok(shopErrors.length === 0, `no errors driving the menus${shopErrors.length ? `\n       ${shopErrors.join('\n       ')}` : ''}`);
+  await shop.screenshot({ path: join(SHOTS, 'playing-after-menu.png') });
+  await shopCtx.close();
+}
+
+// --------------------------------------------------------------------------
+section('Audio');
+{
+  const aCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const a = await aCtx.newPage();
+  const aErrors = [];
+  a.on('pageerror', (e) => aErrors.push(e.message));
+  await a.goto(`${BASE}/game.html`, { waitUntil: 'load' });
+  await a.waitForFunction(() => !!window.__game, null, { timeout: 15000 });
+
+  ok((await a.evaluate(() => window.__game.audio.ctx)) === null, 'no AudioContext before a gesture');
+
+  // A real click, which is what mobile Safari requires before audio will start.
+  await a.click('#btn-play');
+  const started = await a.evaluate(() => ({
+    hasCtx: !!window.__game.audio.ctx,
+    state: window.__game.audio.ctx && window.__game.audio.ctx.state,
+  }));
+  ok(started.hasCtx, `a gesture creates the AudioContext (state: ${started.state})`);
+
+  // Every sound must be safe to fire regardless of context state — they are
+  // called from the game loop, which knows nothing about autoplay policy.
+  const threw = await a.evaluate(() => {
+    try {
+      const au = window.__game.audio;
+      for (const s of ['jump', 'land', 'slide', 'coin', 'hit', 'roar', 'caught']) au[s]();
+      au.setIntensity(0.5);
+      au.setChase(true);
+      au.startMusic();
+      au.stopMusic();
+      return null;
+    } catch (e) {
+      return e.message;
+    }
+  });
+  ok(threw === null, `every sound plays without throwing${threw ? ` (${threw})` : ''}`);
+  ok(aErrors.length === 0, `no audio errors${aErrors.length ? `\n       ${aErrors.join('\n       ')}` : ''}`);
+  await aCtx.close();
+}
+
+// --------------------------------------------------------------------------
 section('8. Manifest and icons');
 {
   const res = await page.request.get(`${BASE}/manifest.webmanifest`);

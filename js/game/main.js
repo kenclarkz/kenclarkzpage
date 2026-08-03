@@ -7,6 +7,7 @@ import { Track } from './track.js';
 import { LEFT, RIGHT } from './path.js';
 import { Entities } from './entities.js';
 import { Player } from './player.js';
+import { Atmosphere } from './atmosphere.js';
 import * as Input from './input.js';
 import { Hud, loadHighScore, saveHighScore } from './hud.js';
 import { registerServiceWorker, setupInstall, isInstalled } from './pwa.js';
@@ -32,20 +33,25 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.shadowMap.enabled = false;
 renderer.setClearColor(C.FOG_COLOR, 1);
+// The torchlight is a bright point light close to the walls, so raw output
+// would clip to white wherever it lands. Filmic tone mapping rolls those
+// highlights off instead, which is what lets the light be strong enough to
+// show the masonry without blowing it out.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
 
 const scene = new THREE.Scene();
 // Fog is the draw-distance mechanism, not decoration: it matches the clear
-// colour exactly, so nothing ever needs to exist past camera.far.
+// colour and the sky gradient's bottom stop exactly, so nothing ever needs to
+// exist past camera.far and the horizon has no visible join.
 scene.fog = new THREE.Fog(C.FOG_COLOR, C.FOG_NEAR, C.FOG_FAR);
 
 const camera = new THREE.PerspectiveCamera(C.FOV_BASE, 1, C.CAMERA_NEAR, C.CAMERA_FAR);
 camera.position.set(0, 3.1, 5.4);
 camera.lookAt(0, 1.15, -4);
 
-scene.add(new THREE.HemisphereLight(0xb8cbe4, 0x6b5334, 1.15));
-const sun = new THREE.DirectionalLight(0xffe9c4, 0.95);
-sun.position.set(4, 9, 3);
-scene.add(sun);
+// Sky, embers and all four lights.
+const atmosphere = new Atmosphere(scene);
 
 // --- game objects ---------------------------------------------------------
 const rngState = { fn: C.makeRng(SEED) };
@@ -74,6 +80,7 @@ let best = loadHighScore();
 let lastArc = null;
 let cornersTaken = 0;
 let frames = 0;
+let elapsed = 0; // drives the coin spin and the torch flicker
 
 hud.setBest(best);
 
@@ -195,6 +202,9 @@ function step(dt) {
   }
 
   if (entities.dirty) entities.refresh(track.path);
+  elapsed += dt;
+  entities.spin(elapsed);
+  atmosphere.update(dt, state === PLAYING && !player.isDead ? player.speed : 0);
   updateWorldTransform();
   updateCamera(dt);
 
@@ -222,9 +232,15 @@ function updateCamera(dt) {
 
 // --- adaptive resolution --------------------------------------------------
 // devicePixelRatio is 3 on an iPhone; rendering at 3x is 9x the fragment work
-// of 1x and is by far the easiest way to tank the frame rate on a scene this
-// simple. Start capped, and step down (never up, to avoid oscillation).
-const DPR_STEPS = [2, 1.5, 1.25, 1];
+// of 1x and is by far the easiest way to tank the frame rate. Start capped, and
+// step down (never up, to avoid oscillation).
+//
+// The ceiling is 1.75 rather than 2 because the lit corridor is now doing real
+// per-fragment work — three lights, a colour map and a bump map — over most of
+// the screen. This is the safety valve for that: it is the only thing here that
+// adapts to the actual device, so it starts conservative and gives up
+// resolution before it gives up frame rate.
+const DPR_STEPS = [1.75, 1.5, 1.25, 1];
 let dprIdx = 0;
 let frameAccum = 0;
 let frameCount = 0;
@@ -402,6 +418,9 @@ window.__game = {
   player,
   track,
   entities,
+  atmosphere,
+  scene,
+  camera,
   renderer,
   emit,
   start: startGame,

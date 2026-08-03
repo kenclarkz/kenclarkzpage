@@ -1,4 +1,4 @@
-// The runner: a state machine plus a character built from six boxes.
+// The runner: a state machine plus a character built from merged box clusters.
 //
 // The player never moves through world space. It owns three scalars —
 // `distance` along the path, `lateral` offset from the centreline, and jump
@@ -6,6 +6,7 @@
 // here only ever animates in place.
 
 import * as THREE from './three.js';
+import { box, merge } from './geo.js';
 import * as C from './config.js';
 
 export const RUNNING = 0;
@@ -13,45 +14,102 @@ export const JUMPING = 1;
 export const SLIDING = 2;
 export const DEAD = 3;
 
-const SKIN = new THREE.MeshLambertMaterial({ color: 0xd9a06b });
-const SHIRT = new THREE.MeshLambertMaterial({ color: 0xc0392b });
-const PANTS = new THREE.MeshLambertMaterial({ color: 0x2f4257 });
+const COL = {
+  skin: 0xd9a06b,
+  shirt: 0xb8392c,
+  shirtDark: 0x8e2a20,
+  pants: 0x2f4257,
+  boot: 0x3a2a1c,
+  hair: 0x2a1c12,
+  gold: 0xe8b849,
+  pack: 0x6b5334,
+  dark: 0x14100c,
+};
 
-function limbGeometry(w, h, d) {
-  const g = new THREE.BoxGeometry(w, h, d);
-  // Bake the pivot into the geometry so rotation.x swings from the joint,
-  // with no nested empties to keep in sync.
-  g.translate(0, -h / 2, 0);
-  return g;
+// One material for the whole character: every part carries its colour in the
+// vertex attribute, so the pieces below cost nothing extra to author.
+const SKIN_MAT = new THREE.MeshPhongMaterial({
+  vertexColors: true,
+  shininess: 12,
+  specular: 0x2a2018,
+});
+
+/**
+ * A limb, with the pivot baked into the geometry so `rotation.x` swings from
+ * the joint with no nested empties to keep in sync.
+ */
+function limb(color, w, h, d, footColor, fw, fh, fd, fz) {
+  const parts = [box(color, w, h, d, 0, -h / 2, 0)];
+  if (footColor !== undefined) parts.push(box(footColor, fw, fh, fd, 0, -h - fh / 2 + 0.02, fz));
+  return merge(parts, 1);
 }
 
 function buildCharacter() {
   const root = new THREE.Group();
 
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.3), SHIRT);
+  const torso = new THREE.Mesh(
+    merge(
+      [
+        box(COL.shirt, 0.5, 0.7, 0.3, 0, 0, 0),
+        box(COL.shirtDark, 0.58, 0.15, 0.32, 0, 0.3, 0),      // shoulder yoke
+        box(COL.gold, 0.54, 0.09, 0.34, 0, -0.28, 0),          // belt
+        box(COL.shirtDark, 0.13, 0.74, 0.33, 0.08, 0.02, 0, 0, 0, 0.32), // sash
+        box(COL.pack, 0.3, 0.34, 0.14, 0, 0.06, 0.21),         // pack
+      ],
+      1
+    ),
+    SKIN_MAT
+  );
   torso.position.y = 1.0;
   root.add(torso);
 
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 0.34), SKIN);
+  const head = new THREE.Mesh(
+    merge(
+      [
+        box(COL.skin, 0.36, 0.36, 0.34, 0, 0, 0),
+        box(COL.hair, 0.38, 0.14, 0.36, 0, 0.19, 0.01),        // hair
+        box(COL.gold, 0.39, 0.07, 0.37, 0, 0.09, 0),           // headband
+        box(COL.dark, 0.07, 0.07, 0.04, -0.09, 0.01, -0.17),   // eyes
+        box(COL.dark, 0.07, 0.07, 0.04, 0.09, 0.01, -0.17),
+      ],
+      1
+    ),
+    SKIN_MAT
+  );
   head.position.y = 1.53;
   root.add(head);
 
-  const armGeo = limbGeometry(0.16, 0.55, 0.16);
-  const legGeo = limbGeometry(0.2, 0.65, 0.2);
+  const armGeo = limb(COL.skin, 0.16, 0.55, 0.16, COL.skin, 0.19, 0.17, 0.19, 0);
+  const legGeo = limb(COL.pants, 0.2, 0.65, 0.2, COL.boot, 0.24, 0.17, 0.3, -0.04);
 
-  const mk = (geo, mat, x, y) => {
-    const m = new THREE.Mesh(geo, mat);
+  const mk = (geo, x, y) => {
+    const m = new THREE.Mesh(geo, SKIN_MAT);
     m.position.set(x, y, 0);
     root.add(m);
     return m;
   };
 
-  const armL = mk(armGeo, SKIN, -0.33, 1.28);
-  const armR = mk(armGeo, SKIN, 0.33, 1.28);
-  const legL = mk(legGeo, PANTS, -0.14, 0.68);
-  const legR = mk(legGeo, PANTS, 0.14, 0.68);
+  const armL = mk(armGeo, -0.33, 1.28);
+  const armR = mk(armGeo, 0.33, 1.28);
+  const legL = mk(legGeo, -0.14, 0.68);
+  const legR = mk(legGeo, 0.14, 0.68);
 
-  return { root, torso, head, armL, armR, legL, legR };
+  // A trailing scarf. It costs one draw call and does more for the sense of
+  // speed than anything else on the character.
+  const scarf = new THREE.Mesh(
+    merge(
+      [
+        box(COL.shirtDark, 0.22, 0.34, 0.08, 0, -0.17, 0),
+        box(COL.shirt, 0.17, 0.3, 0.07, 0, -0.46, 0.02),
+      ],
+      1
+    ),
+    SKIN_MAT
+  );
+  scarf.position.set(0, 1.36, 0.19);
+  root.add(scarf);
+
+  return { root, torso, head, armL, armR, legL, legR, scarf };
 }
 
 export class Player {
@@ -65,11 +123,11 @@ export class Player {
 
     // A flat disc reads jump height far better than a real shadow map, and
     // costs one transparent draw call instead of a whole shadow pass.
-    const shadowGeo = new THREE.CircleGeometry(0.46, 12);
+    const shadowGeo = new THREE.CircleGeometry(0.5, 14);
     shadowGeo.rotateX(-Math.PI / 2);
     this.shadow = new THREE.Mesh(
       shadowGeo,
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false })
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4, depthWrite: false })
     );
     this.shadow.position.y = 0.02;
     this.group.add(this.shadow);
@@ -209,13 +267,18 @@ export class Player {
       }
     }
 
+    // The scarf streams out behind, harder the faster you are going.
+    const lift = Math.min(1.35, 0.4 + this.speed * 0.032);
+    p.scarf.rotation.x = lift + Math.sin(this.runPhase * 2) * 0.16;
+    p.scarf.rotation.z = lateralGap * 0.22 + Math.sin(this.runPhase * 1.4) * 0.1;
+
     // Bank into the lane change, and bob on the run cycle.
     this.body.rotation.z = lateralGap * -0.18;
     const bob = this.state === RUNNING ? Math.abs(Math.cos(this.runPhase)) * 0.06 : 0;
     this.group.position.y = this.y + bob;
 
     this.shadow.position.y = 0.02 - this.y - bob;
-    this.shadow.material.opacity = Math.max(0, 0.35 * (1 - this.y / 2.2));
+    this.shadow.material.opacity = Math.max(0, 0.4 * (1 - this.y / 2.2));
   }
 
   updateDeath(dt) {
@@ -224,6 +287,6 @@ export class Player {
     this.body.rotation.x = -t * 2.2;
     this.body.position.z = t * 0.9;
     this.group.position.y = this.y * (1 - t);
-    this.shadow.material.opacity = Math.max(0, 0.35 * (1 - t));
+    this.shadow.material.opacity = Math.max(0, 0.4 * (1 - t));
   }
 }

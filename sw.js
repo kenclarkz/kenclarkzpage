@@ -6,7 +6,7 @@
 //
 // To ship an update: bump VERSION. That is the entire release process.
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = `temple-runner-${VERSION}`;
 
 // All relative — this worker's scope is /kenclarkzpage/, not the domain root.

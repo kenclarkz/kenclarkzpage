@@ -148,15 +148,23 @@ section('4-5. Input');
   await sleep(60);
   ok((await page.evaluate(() => window.__game.player.targetLane)) === 1, 'ArrowRight moves to the right lane');
 
+  // Wait for the runner to be back on its feet rather than sleeping a fixed
+  // time. A jump is 0.65 *simulated* seconds and the clamped accumulator runs
+  // slower than wall clock here, so a fixed wait can leave the player still
+  // airborne — where a slide input fast-falls instead, and the next assertion
+  // fails for reasons that have nothing to do with input handling.
+  const landed = () =>
+    page.waitForFunction(() => window.__game.player.state === 0, null, { timeout: 10000 });
+
   await page.keyboard.press('ArrowUp');
   await sleep(120);
   ok((await page.evaluate(() => window.__game.player.state)) === 1, 'ArrowUp jumps');
-  await sleep(700);
+  await landed();
 
   await page.keyboard.press('ArrowDown');
   await sleep(120);
   ok((await page.evaluate(() => window.__game.player.state)) === 2, 'ArrowDown slides');
-  await sleep(700);
+  await landed();
 
   // Playwright's mouse emits pointer events, so this drives the production
   // swipe handler rather than a test-only shortcut.
@@ -180,11 +188,11 @@ section('4-5. Input');
 
   await swipe(0, -120);
   ok((await page.evaluate(() => window.__game.player.state)) === 1, 'swipe up jumps');
-  await sleep(700);
+  await landed();
 
   await swipe(0, 120);
   ok((await page.evaluate(() => window.__game.player.state)) === 2, 'swipe down slides');
-  await sleep(700);
+  await landed();
 }
 
 // --------------------------------------------------------------------------
@@ -379,8 +387,11 @@ section('9. Offline');
   });
 
   ok(!!alive, 'the page loads with no network at all');
-  // A cold software-rasterised start is slow; this asserts liveness, not speed.
-  ok(alive && alive.frames > 10, `and keeps rendering offline (${alive ? alive.frames : 0} frames)`);
+  // A cold software-rasterised start is slow, and boot now deliberately spends
+  // ~160 ms compiling the guardian's shaders up front so the chase never
+  // stalls. Both land inside this window, so these assert liveness, not speed —
+  // what they catch is a loop that never started.
+  ok(alive && alive.frames > 4, `and keeps rendering offline (${alive ? alive.frames : 0} frames)`);
   ok(alive && alive.dist > 1, `and the game actually runs offline (${alive ? alive.dist.toFixed(1) : 0} m)`);
   ok(alive && alive.tris > 0, 'and three.js loaded from cache (geometry is drawing)');
   ok(offErrors.length === 0, `no errors offline${offErrors.length ? `\n       ${offErrors.join('\n       ')}` : ''}`);

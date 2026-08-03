@@ -89,7 +89,7 @@ let elapsed = 0; // drives the coin spin and the torch flicker
 // The chase. `timer` counts down the window in which another hit is fatal;
 // `receding` is the tail where the guardian drops back and you are already
 // safe; `pounce` is the catch animation playing over the death.
-const chase = { timer: 0, receding: 0, pounce: 0 };
+const chase = { timer: 0, arrive: 0, receding: 0, pounce: 0 };
 const chaseActive = () => chase.timer > 0;
 
 hud.setBest(best);
@@ -104,6 +104,7 @@ function resetRun() {
   lastArc = null;
   cornersTaken = 0;
   chase.timer = 0;
+  chase.arrive = 0;
   chase.receding = 0;
   chase.pounce = 0;
   monster.reset();
@@ -179,14 +180,20 @@ function onObstacleHit() {
     player.die('caught');
     return;
   }
+  // Start the run-in from wherever it currently is, so a hit taken while it is
+  // still dropping back closes the gap rather than snapping it backwards.
+  chase.arrive = chaseNearness();
   chase.timer = C.CHASE_SECONDS;
   chase.receding = 0;
+  monster.enter(player.lateral);
   player.stumble();
 }
 
 function updateChase(dt) {
   if (chase.timer > 0) {
     chase.timer = Math.max(0, chase.timer - dt);
+    // Charge into frame instead of appearing at full size.
+    chase.arrive = Math.min(1, chase.arrive + dt / C.CHASE_ARRIVE);
     // Outrun it: hand over to the recede tail, where you are already safe.
     if (chase.timer === 0) chase.receding = C.CHASE_RECEDE;
   } else if (chase.receding > 0) {
@@ -197,7 +204,7 @@ function updateChase(dt) {
 
 /** 1 = right on your heels, 0 = gone. */
 function chaseNearness() {
-  if (chase.timer > 0) return 1;
+  if (chase.timer > 0) return chase.arrive;
   if (chase.receding > 0) return chase.receding / C.CHASE_RECEDE;
   return 0;
 }
@@ -454,6 +461,16 @@ function frame(now) {
 applyDpr();
 resize();
 resetRun();
+
+// Compile the guardian's shaders now rather than mid-chase. The two renders are
+// deliberate and must stay paired: the first pays the compile cost with it in
+// view, the second overwrites that frame with a clean one. Both run
+// synchronously during load, so the browser composites only the second.
+monster.warmUp();
+renderer.render(scene, camera);
+monster.group.visible = false;
+renderer.render(scene, camera);
+
 showMenu();
 requestAnimationFrame(frame);
 
@@ -500,8 +517,10 @@ window.__game = {
   },
   /** Put the guardian on the player's heels, without needing a collision. */
   startChase() {
+    chase.arrive = 1; // tests want it already in position
     chase.timer = C.CHASE_SECONDS;
     chase.receding = 0;
+    monster.enter(player.lateral);
   },
   monster,
   player,

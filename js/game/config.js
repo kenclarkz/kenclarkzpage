@@ -33,6 +33,7 @@ export const PLAYER_HALF_W = 0.42;  // collider half-width
 // Survive CHASE_SECONDS without hitting anything else and you pull away; hit
 // something while it is still back there and it has you.
 export const CHASE_SECONDS = 10;
+export const CHASE_ARRIVE = 0.7;    // seconds it spends charging into frame
 export const CHASE_RECEDE = 1.3;    // seconds it takes to drop out of sight
 export const POUNCE_TIME = 0.55;    // the catch animation, before the panel
 export const STUMBLE_TIME = 0.5;    // how long a glancing hit costs you

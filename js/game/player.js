@@ -9,6 +9,9 @@ import * as THREE from './three.js';
 import { box, merge } from './geo.js';
 import * as C from './config.js';
 
+const gltfLoader = new THREE.GLTFLoader();
+let cachedModel = null;
+
 export const RUNNING = 0;
 export const JUMPING = 1;
 export const SLIDING = 2;
@@ -80,6 +83,18 @@ function buildGeometries(c) {
   };
 }
 
+function loadModelAsync() {
+  if (cachedModel) return Promise.resolve(cachedModel);
+  return new Promise((resolve) => {
+    gltfLoader.load('vendor/models/character.glb', (gltf) => {
+      cachedModel = gltf.scene;
+      resolve(cachedModel);
+    }, undefined, () => {
+      resolve(null);
+    });
+  });
+}
+
 function buildCharacter(geos) {
   const root = new THREE.Group();
 
@@ -104,7 +119,11 @@ function buildCharacter(geos) {
 export class Player {
   constructor(palette) {
     this.group = new THREE.Group();
+    this.palette = palette;
+    this.modelLoaded = false;
+    this.modelBody = null;
 
+    // Start with procedural character, will be replaced if model loads
     this.geos = buildGeometries(palette);
     const parts = buildCharacter(this.geos);
     this.parts = parts;
@@ -123,6 +142,27 @@ export class Player {
     this.group.add(this.shadow);
 
     this.reset();
+    this.loadModel();
+  }
+
+  loadModel() {
+    loadModelAsync().then((model) => {
+      if (!model) return;
+      const modelCopy = model.clone();
+      modelCopy.traverse((node) => {
+        if (node.isMesh) {
+          node.material = SKIN_MAT;
+          node.castShadow = false;
+          node.receiveShadow = false;
+        }
+      });
+      this.modelBody = modelCopy;
+      this.modelLoaded = true;
+      // Replace procedural body with model
+      this.group.remove(this.body);
+      this.group.add(this.modelBody);
+      this.body = this.modelBody;
+    });
   }
 
   reset() {
@@ -147,12 +187,13 @@ export class Player {
   }
 
   /**
-   * Swap the character's palette. Rebuilds the merged geometries, since the
-   * colours live in a vertex attribute — the material is shared and untouched,
-   * so no shader is recompiled and no skin can stall a frame the way a new
-   * material would.
+   * Swap the character's palette. Rebuilds the merged geometries for procedural
+   * character, or is a no-op for model-based character (model has its own appearance).
    */
   setSkin(palette) {
+    // If using the 3D model, skin changes don't apply
+    if (this.modelLoaded) return;
+
     const next = buildGeometries(palette);
     const p = this.parts;
     p.torso.geometry = next.torso;

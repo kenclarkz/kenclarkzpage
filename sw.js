@@ -6,7 +6,7 @@
 //
 // To ship an update: bump VERSION. That is the entire release process.
 
-const VERSION = 'v7';
+const VERSION = 'v8';
 const CACHE = `temple-runner-${VERSION}`;
 
 // All relative — this worker's scope is /kenclarkzpage/, not the domain root.
@@ -18,6 +18,7 @@ const ASSETS = [
   // the core file works fine online and gives a blank screen offline.
   'vendor/three/three.module.min.js',
   'vendor/three/three.core.min.js',
+  'vendor/models/character.glb',
   'js/game/three.js',
   'js/game/config.js',
   'js/game/save.js',

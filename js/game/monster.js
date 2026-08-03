@@ -22,6 +22,9 @@ const COL = {
 
 const EMBER = 0xff5a1e;
 
+// How far off the runner's shoulder the guardian runs.
+const SIDE_OFFSET = 1.45;
+
 const BODY_MAT = new THREE.MeshPhongMaterial({
   vertexColors: true,
   shininess: 6,
@@ -132,6 +135,42 @@ export class Monster {
   }
 
   /**
+   * Pose the guardian for a throwaway warm-up render.
+   *
+   * Its two materials are unlike any others in the scene, so the first frame it
+   * appears on is the frame the GPU compiles and links their programs and
+   * uploads their buffers — measured at ~160 ms, which lands as a hard stall
+   * exactly when the chase starts. Drawing it once during load moves that cost
+   * somewhere nobody is playing.
+   *
+   * It is posed in full view on purpose: a fragment shader is only guaranteed
+   * to be compiled once fragments actually shade, so parking it in the fog or
+   * behind the camera risks the driver deferring the work to the frame that
+   * matters. See the paired render calls in the boot sequence — the warm-up
+   * frame is overwritten before the browser ever composites the canvas.
+   */
+  warmUp() {
+    this.group.visible = true;
+    this.group.position.set(0, 0, 2);
+    this.trunk.rotation.set(0, 0, 0);
+  }
+
+  /** Which side of the runner it hunts down, and how far out. */
+  station(lateral, lunge = 0) {
+    const side = lateral > 0 ? -1 : 1;
+    return lateral + side * (SIDE_OFFSET - lunge * 1.3);
+  }
+
+  /**
+   * A chase is starting. Snap to the flank rather than easing out to it: the
+   * ease takes about a second, and for that second it would be sitting directly
+   * behind the runner with the camera looking straight through it.
+   */
+  enter(lateral) {
+    this.lateral = this.station(lateral);
+  }
+
+  /**
    * @param {number} dt
    * @param {number} speed    the runner's speed, which sets the gait
    * @param {number} near     1 = right on your heels, 0 = gone
@@ -152,9 +191,7 @@ export class Monster {
     // so anything sharing their lane and nearer the lens hides them completely
     // — and not being able to see your own runner is worse than not being able
     // to see what is chasing them.
-    const side = lateral > 0 ? -1 : 1;
-    const want = lateral + side * (1.45 - lunge * 1.3);
-    this.lateral += (want - this.lateral) * Math.min(1, dt * 2.2);
+    this.lateral += (this.station(lateral, lunge) - this.lateral) * Math.min(1, dt * 2.2);
 
     // Nearer the camera means bigger, and the camera is only a few metres back:
     // at full menace this sits just behind the runner, not up against the lens.

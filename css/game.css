@@ -108,10 +108,19 @@ canvas#view {
   top: 0;
   bottom: 0;
   pointer-events: none;
-  /* A red bloom in from the edges. Cheaper and less obtrusive than a full
-     tint, and it leaves the centre of the screen — where the obstacles are —
-     completely clear. */
-  box-shadow: inset 0 0 90px 20px rgba(190, 30, 12, 0.55);
+  /* A red bloom in from the edges, leaving the centre — where the obstacles
+     are — completely clear.
+     A gradient rather than an inset box-shadow, and the pulse animates opacity
+     rather than the shadow: a full-screen 90px blur repainted twice a second is
+     one of the more expensive things you can ask a phone's compositor to do,
+     and this is on screen exactly when the frame budget is tightest. Painted
+     once into its own layer, then only composited. */
+  background: radial-gradient(
+    ellipse 75% 60% at 50% 50%,
+    rgba(190, 30, 12, 0) 55%,
+    rgba(190, 30, 12, 0.5) 100%
+  );
+  will-change: opacity;
   animation: chase-pulse 0.9s ease-in-out infinite;
 }
 

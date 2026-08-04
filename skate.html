@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <!-- viewport-fit=cover is mandatory: without it every env(safe-area-inset-*)
+         below evaluates to 0 and the score sits under an iPhone's notch. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <title>Skate</title>
+    <meta name="description" content="A skateboarding game with a physics-driven skater: flick to pop, carve to turn, and land it or slam.">
+
+    <link rel="stylesheet" href="css/skate.css">
+
+    <!-- Every path is relative: this site is served from the /kenclarkzpage/
+         subpath, so a leading slash would resolve to the domain root. -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#10141a">
+
+    <!-- iOS ignores the manifest for both the icon and the display mode. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Skate">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+    <link rel="icon" href="icons/icon-192.png" type="image/png">
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="view"></canvas>
+
+      <div id="hud">
+        <div id="stats">
+          <div class="readout"><span class="label">Score</span><span id="score">0</span></div>
+          <div class="readout"><span class="label">Best</span><span id="best">0</span></div>
+          <div class="readout speed"><span id="speed">0</span><span class="label">km/h</span></div>
+          <div id="air" hidden>0.00 m</div>
+        </div>
+        <button id="install" type="button" hidden>Install</button>
+
+        <p id="callout" hidden></p>
+
+        <div id="combo" hidden>
+          <span id="combo-list"></span>
+          <b id="combo-mult"></b>
+        </div>
+
+        <!-- Balance: an inverted pendulum, so it always needs correcting. -->
+        <div id="balance" hidden>
+          <span class="balance-label">balance</span>
+          <div class="balance-track"><i id="balance-pip"></i></div>
+        </div>
+
+        <!-- How loaded the legs are. Deeper pull, bigger pop. -->
+        <div id="charge" hidden>
+          <div class="charge-track"><i id="charge-bar"></i></div>
+        </div>
+
+        <pre id="debug" hidden></pre>
+      </div>
+
+      <div id="overlay" hidden>
+        <section id="screen-start" class="screen">
+          <h1 class="logo"><span>skate</span><b>.</b></h1>
+          <p class="tag">Pull back to load. Flick to pop.</p>
+          <div id="stat-lines" class="stat-lines"></div>
+          <nav class="menu">
+            <button id="btn-play" class="primary" type="button">Skate</button>
+            <button id="btn-guide" type="button">Controls</button>
+            <button id="opt-sound" type="button">Sound: On</button>
+            <button id="opt-reset" class="quiet" type="button">Reset stats</button>
+            <a class="quiet link" href="index.html">Leave the park</a>
+          </nav>
+        </section>
+
+        <section id="screen-guide" class="screen wide" hidden>
+          <h1>Controls</h1>
+          <div class="guide">
+            <div class="guide-block">
+              <h2>Move</h2>
+              <ul>
+                <li><b>Left half of the screen</b> — drag to steer, tap to push</li>
+                <li><b>A / D</b> or <b>← / →</b> — steer, and spin in the air</li>
+                <li><b>W</b> — push</li>
+                <li><b>Shift</b> — powerslide</li>
+              </ul>
+              <p class="note">
+                Turning is a lean, not a wheel: at speed you carve wide, and at
+                walking pace you can pivot on the spot.
+              </p>
+            </div>
+            <div class="guide-block">
+              <h2>Flick-It</h2>
+              <ul>
+                <li><b>Right half of the screen</b> — pull down to load your legs, then flick</li>
+                <li>Flick <b>up</b> — ollie</li>
+                <li>Flick <b>up and left</b> — kickflip</li>
+                <li>Flick <b>up and right</b> — heelflip</li>
+                <li>Flick <b>left</b> or <b>right</b> — shove-it</li>
+                <li>Quarter circle <b>down, left, up</b> — 360 flip</li>
+                <li><b>Space</b> to load, release to ollie</li>
+                <li><b>J K U I O N M</b> — flip, heel, shuv, frontside shuv, 360 shuv, varial, tre</li>
+              </ul>
+              <p class="note">
+                How far you pull back is how much pop you get. Hold it too long and
+                your legs give out — the nose comes up and you are in a manual.
+              </p>
+            </div>
+            <div class="guide-block">
+              <h2>Land it</h2>
+              <ul>
+                <li>The board has to be level, and pointing roughly where it is going</li>
+                <li>Finish the flip before the wheels touch, or you land on the side of it</li>
+                <li>Ride away, link another trick, and the combo multiplies</li>
+                <li>Rails and ledges catch on the way down — then hold the balance</li>
+              </ul>
+            </div>
+          </div>
+          <button id="btn-guide-back" class="primary" type="button">Back</button>
+        </section>
+
+        <section id="screen-paused" class="screen" hidden>
+          <h1>Paused</h1>
+          <button id="btn-resume" class="primary" type="button">Keep skating</button>
+          <button id="btn-pause-menu" type="button">Menu</button>
+        </section>
+
+        <section id="screen-bail" class="screen" hidden>
+          <h1>Slam</h1>
+          <p id="bail-why" class="tag"></p>
+          <button id="btn-retry" class="primary" type="button">Roll again</button>
+          <button id="btn-bail-menu" type="button">Menu</button>
+        </section>
+      </div>
+
+      <div id="ios-hint" hidden>
+        <p>Install it: tap <b>Share</b>, then <b>Add to Home Screen</b>.</p>
+        <button id="ios-dismiss" type="button" aria-label="Dismiss">&times;</button>
+      </div>
+    </div>
+
+    <noscript>
+      <p style="color:#e6e8ea;font:16px system-ui;padding:24px">This game needs JavaScript.</p>
+    </noscript>
+
+    <script type="module" src="js/skate/main.js"></script>
+  </body>
+</html>

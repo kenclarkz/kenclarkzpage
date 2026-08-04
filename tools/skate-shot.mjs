@@ -116,12 +116,37 @@ const shots = {
   'guide': () => {
     window.__skate.hud.show('guide');
   },
+  'parks': () => {
+    const g = window.__skate;
+    g.hud.renderParks(g.parks, g.park.id);
+    g.hud.show('parks');
+  },
+  // A wide shot of the home park with its ambient cast in frame: the AI
+  // skaters, a bird overhead, and a logo waiting to be picked up.
+  'crowd': () => {
+    const g = window.__skate;
+    g.switchPark('home');
+    g.place(0, -10, 0, 0);
+    g.hold(0.1);
+  },
+  'bowl': () => {
+    const g = window.__skate;
+    g.switchPark('bowl');
+    g.place(0, -12, 0, 6);
+    g.hold(1.2);
+  },
+  'bigair': () => {
+    const g = window.__skate;
+    g.switchPark('bigair');
+    g.place(0, -18, 0, 9);
+    g.hold(1.4);
+  },
 };
 
 /** Shots that want the sim left running after they are set up. */
 const LIVE = new Set(['bail', 'bail-air']);
 /** ...and shots that must not be frozen, because freezing hides the overlay. */
-const NO_FREEZE = new Set([...LIVE, 'menu', 'guide']);
+const NO_FREEZE = new Set([...LIVE, 'menu', 'guide', 'parks']);
 
 /**
  * Close-up framings, for reading the rig rather than the park. The offsets are

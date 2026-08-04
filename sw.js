@@ -6,7 +6,7 @@
 //
 // To ship an update: bump VERSION. That is the entire release process.
 
-const VERSION = 'v8';
+const VERSION = 'v9';
 const CACHE = `temple-runner-${VERSION}`;
 
 // All relative — this worker's scope is /kenclarkzpage/, not the domain root.
@@ -51,6 +51,9 @@ const ASSETS = [
   'js/skate/hud.js',
   'js/skate/audio.js',
   'js/skate/save.js',
+  'js/skate/ai.js',
+  'js/skate/bird.js',
+  'js/skate/collectible.js',
   'js/skate/main.js',
   'icons/icon-192.png',
   'icons/icon-512.png',

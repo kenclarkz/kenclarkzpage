@@ -3,7 +3,7 @@
 
 import * as THREE from '../game/three.js';
 import * as C from './config.js';
-import { Park, SPAWN, ROUGH } from './park.js';
+import { Park, PARKS, ROUGH } from './park.js';
 import { Board } from './board.js';
 import { Skater } from './skater.js';
 import { Ride, GROUND, GRIND } from './physics.js';
@@ -13,13 +13,20 @@ import { Input } from './input.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
 import { save } from './save.js';
+import { makeAiSkaters } from './ai.js';
+import { makeBirds } from './bird.js';
+import { makeLogos, checkPickup } from './collectible.js';
 import { registerServiceWorker, setupInstall } from '../game/pwa.js';
 
 const START = 'start';
 const PLAYING = 'playing';
 const PAUSED = 'paused';
 const GUIDE = 'guide';
+const PARKMENU = 'parks';
 const BAILED = 'bail';
+
+const AI_COUNT = 3;
+const BIRD_COUNT = 3;
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.get('debug') === '1';
@@ -86,7 +93,7 @@ sun.position.set(-6, 9, 4);
 scene.add(sun);
 
 // --- world ----------------------------------------------------------------
-const park = new Park();
+let park = new Park(PARKS.find((p) => p.id === save.park) || PARKS[0]);
 scene.add(park.group);
 
 const board = new Board();
@@ -96,6 +103,48 @@ scene.add(ride.frame);
 
 const ragdoll = new Ragdoll(park);
 const chase = new ChaseCamera(camera, park);
+
+const bots = makeAiSkaters(park, AI_COUNT);
+for (const b of bots) scene.add(b.ride.frame);
+
+const birds = makeBirds(BIRD_COUNT);
+for (const b of birds) scene.add(b.group);
+
+let logos = makeLogos(park);
+let logosCollected = 0;
+
+/** Release every geometry a group owns. Only ever called on a group that is
+ * about to be dropped for good — the park being replaced by another one. */
+function disposeGroup(group) {
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    o.geometry?.dispose();
+    if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose());
+    else o.material?.dispose();
+  });
+}
+
+/**
+ * Swap the whole map out from under the player. The ride, the camera and the
+ * ragdoll do not need rebuilding — they only ever read `.park` when they need
+ * it, so handing them the new one is the entire hand-off. The AI tours a new
+ * patrol loop, the logos are fresh, and the old park's geometry is freed
+ * rather than left for the GC to eventually notice.
+ */
+function loadPark(def) {
+  disposeGroup(park.group);
+  scene.remove(park.group);
+  park = new Park(def);
+  scene.add(park.group);
+  ride.park = park;
+  chase.park = park;
+  ragdoll.park = park;
+  logos = makeLogos(park);
+  logosCollected = 0;
+  bots.forEach((b, i) => b.setPark(park, i));
+  save.setPark(def.id);
+  hud.setCurrentPark(def.name);
+}
 
 /**
  * A soft blob, laid on the surface under the board.
@@ -159,11 +208,13 @@ const input = new Input(document.getElementById('app'));
 let state = START;
 let score = 0;           // banked this session
 let frames = 0;
+let worldTime = 0;       // unconditional clock, for birds and the logos' spin
 let liveCombo = { names: [], points: 0 };
 
 hud.setBest(save.best);
 hud.setSound(save.sound);
 hud.setStats(save);
+hud.setCurrentPark(park.name);
 
 // --- state changes --------------------------------------------------------
 function respawn() {
@@ -175,7 +226,7 @@ function respawn() {
     board.group.position.set(0, 0, 0);
     board.group.quaternion.identity();
   }
-  ride.reset(SPAWN);
+  ride.reset();
   chase.snap(ride);
   liveCombo = { names: [], points: 0 };
   hud.setCombo([], 0, 1);
@@ -206,6 +257,13 @@ function showGuide() {
   hud.show('guide');
 }
 
+function showParks() {
+  state = PARKMENU;
+  input.enabled = false;
+  hud.renderParks(PARKS, park.id);
+  hud.show('parks');
+}
+
 function togglePause() {
   if (state === PLAYING) {
     state = PAUSED;
@@ -224,6 +282,15 @@ hud.on.retry = () => startGame();
 hud.on.resume = () => togglePause();
 hud.on.guide = () => showGuide();
 hud.on.back = () => showStart();
+hud.on.parks = () => showParks();
+hud.on.selectPark = (id) => {
+  const def = PARKS.find((p) => p.id === id);
+  if (def && def.id !== park.id) {
+    loadPark(def);
+    respawn();
+  }
+  showStart();
+};
 hud.on.sound = () => {
   save.setSound(!save.sound);
   audio.setEnabled(save.sound);
@@ -308,9 +375,20 @@ function startBail() {
 let bailWait = 0;
 
 function step(dt, frameInput) {
+  // The park's own crowd keeps moving whatever the player is doing — paused at
+  // the menu is exactly when a skatepark should still look alive.
+  for (const b of bots) b.step(dt);
+
   if (state === PLAYING) {
     handleEvents(ride.update(dt, frameInput));
     if (ride.combo.live) liveCombo = { names: ride.combo.names, points: ride.combo.points };
+    const got = checkPickup(logos, ride.pos);
+    if (got) {
+      audio.collect();
+      save.recordLogo();
+      logosCollected++;
+      hud.say('Logo found', 'small');
+    }
   } else if (state === BAILED) {
     ragdoll.step(dt);
     skater.poseRagdoll(ragdoll.named);
@@ -323,7 +401,7 @@ function step(dt, frameInput) {
       state = PAUSED;
       hud.showBail(ride.bailReason);
     }
-  } else if (state === PAUSED || state === START || state === GUIDE) {
+  } else if (state === PAUSED || state === START || state === GUIDE || state === PARKMENU) {
     // Nothing moves, but the camera still eases into place behind a fresh spawn.
   }
 
@@ -335,6 +413,9 @@ function step(dt, frameInput) {
 let cameraLocked = false;
 
 function render(dt) {
+  worldTime += dt;
+  for (const b of birds) b.update(worldTime);
+  for (const l of logos) l.update(dt, worldTime);
   if (!cameraLocked) chase.update(ride, ragdoll, dt);
   if (state !== BAILED) updateShadow();
   else shadow.material.opacity = Math.max(0, shadow.material.opacity - dt);
@@ -350,6 +431,7 @@ function updateHud(dt) {
     const balancing = !!ride.grind || ride.manual;
     hud.setBalance(balancing, ride.balance, C.BALANCE_LIMIT);
     hud.setCharge(input.flickActive || input.charging() ? ride.charge : 0);
+    hud.setLogos(logosCollected, logos.length);
   }
   audio.follow(
     ride.groundSpeed,
@@ -461,7 +543,7 @@ function loop(now) {
         `${modes[ride.mode]}  v ${ride.speed.toFixed(2)} m/s  side ${ride.side.toFixed(2)}\n` +
         `pos ${ride.pos.x.toFixed(1)} ${ride.pos.y.toFixed(2)} ${ride.pos.z.toFixed(1)}  yaw ${ride.yaw.toFixed(2)}\n` +
         `lean ${ride.lean.toFixed(2)}  charge ${ride.charge.toFixed(2)}  bal ${ride.balance.toFixed(2)}\n` +
-        `air ${ride.airHeight.toFixed(2)} m  combo ${ride.combo.points}×${ride.combo.names.length}`
+        `air ${ride.airHeight.toFixed(2)} m  combo ${ride.combo.points}×${ride.combo.names.length}  park ${park.id}`
     );
   }
 }
@@ -471,7 +553,8 @@ applyDpr();
 resize();
 respawn();
 chase.snap(ride);
-showStart();
+if (save.seenGuide) showStart();
+else showGuide();
 requestAnimationFrame(loop);
 
 registerServiceWorker();
@@ -493,8 +576,16 @@ window.__skate = {
   get frames() {
     return frames;
   },
+  get park() {
+    return park;
+  },
+  get logos() {
+    return logos;
+  },
+  parks: PARKS,
+  bots,
+  birds,
   ride,
-  park,
   board,
   skater,
   ragdoll,
@@ -508,6 +599,15 @@ window.__skate = {
   renderer,
   start: startGame,
   respawn,
+  /** Load a different map by id, the way the park picker does. */
+  switchPark(id) {
+    const def = PARKS.find((p) => p.id === id);
+    if (def) {
+      loadPark(def);
+      respawn();
+    }
+    return park;
+  },
   /** Drive one simulation step with a synthetic input, for deterministic tests. */
   drive(dt, over = {}) {
     const base = {

@@ -26,7 +26,7 @@
 
 import * as THREE from '../game/three.js';
 import * as C from './config.js';
-import { ROUGH, SPAWN } from './park.js';
+import { ROUGH } from './park.js';
 import { makeRideState } from './skater.js';
 import { byId, trickName, trickScore, grindName } from './tricks.js';
 
@@ -101,7 +101,7 @@ export class Ride {
     this.reset();
   }
 
-  reset(spawn = SPAWN) {
+  reset(spawn = this.park.spawn) {
     this.pos.set(spawn.x, this.park.heightAt(spawn.x, spawn.z), spawn.z);
     this.vel.set(0, 0, 0);
     this.yaw = spawn.yaw;

@@ -31,6 +31,7 @@
         <div id="stats">
           <div class="readout"><span class="label">Score</span><span id="score">0</span></div>
           <div class="readout"><span class="label">Best</span><span id="best">0</span></div>
+          <div class="readout logos" id="logos-readout" hidden><span class="label">Logos</span><span id="logos-count">0/6</span></div>
           <div class="readout speed"><span id="speed">0</span><span class="label">km/h</span></div>
           <div id="air" hidden>0.00 m</div>
         </div>
@@ -61,60 +62,41 @@
         <section id="screen-start" class="screen">
           <h1 class="logo"><span>skate</span><b>.</b></h1>
           <p class="tag">Pull back to load. Flick to pop.</p>
+          <p class="park-now" id="park-now">Skating: Home Park</p>
           <div id="stat-lines" class="stat-lines"></div>
           <nav class="menu">
             <button id="btn-play" class="primary" type="button">Skate</button>
-            <button id="btn-guide" type="button">Controls</button>
+            <button id="btn-parks" type="button">Choose park</button>
+            <button id="btn-guide" type="button">How to play</button>
             <button id="opt-sound" type="button">Sound: On</button>
             <button id="opt-reset" class="quiet" type="button">Reset stats</button>
             <a class="quiet link" href="index.html">Leave the park</a>
           </nav>
         </section>
 
-        <section id="screen-guide" class="screen wide" hidden>
-          <h1>Controls</h1>
-          <div class="guide">
-            <div class="guide-block">
-              <h2>Move</h2>
-              <ul>
-                <li><b>Left half of the screen</b> — drag to steer, tap to push</li>
-                <li><b>A / D</b> or <b>← / →</b> — steer, and spin in the air</li>
-                <li><b>W</b> — push</li>
-                <li><b>Shift</b> — powerslide</li>
-              </ul>
-              <p class="note">
-                Turning is a lean, not a wheel: at speed you carve wide, and at
-                walking pace you can pivot on the spot.
-              </p>
-            </div>
-            <div class="guide-block">
-              <h2>Flick-It</h2>
-              <ul>
-                <li><b>Right half of the screen</b> — pull down to load your legs, then flick</li>
-                <li>Flick <b>up</b> — ollie</li>
-                <li>Flick <b>up and left</b> — kickflip</li>
-                <li>Flick <b>up and right</b> — heelflip</li>
-                <li>Flick <b>left</b> or <b>right</b> — shove-it</li>
-                <li>Quarter circle <b>down, left, up</b> — 360 flip</li>
-                <li><b>Space</b> to load, release to ollie</li>
-                <li><b>J K U I O N M</b> — flip, heel, shuv, frontside shuv, 360 shuv, varial, tre</li>
-              </ul>
-              <p class="note">
-                How far you pull back is how much pop you get. Hold it too long and
-                your legs give out — the nose comes up and you are in a manual.
-              </p>
-            </div>
-            <div class="guide-block">
-              <h2>Land it</h2>
-              <ul>
-                <li>The board has to be level, and pointing roughly where it is going</li>
-                <li>Finish the flip before the wheels touch, or you land on the side of it</li>
-                <li>Ride away, link another trick, and the combo multiplies</li>
-                <li>Rails and ledges catch on the way down — then hold the balance</li>
-              </ul>
+        <section id="screen-parks" class="screen wide" hidden>
+          <h1>Choose a park</h1>
+          <div class="park-grid" id="park-grid"></div>
+          <button id="btn-parks-back" class="primary" type="button">Back</button>
+        </section>
+
+        <section id="screen-guide" class="screen" hidden>
+          <h1>How to play</h1>
+          <div class="tut-dots" id="tut-dots"></div>
+          <div class="tut-card">
+            <h2 id="tut-title"></h2>
+            <p id="tut-body"></p>
+            <div class="tut-inputs">
+              <div class="tut-input"><span class="tut-input-label">Keyboard</span><span id="tut-keys"></span></div>
+              <div class="tut-input"><span class="tut-input-label">Touch</span><span id="tut-touch"></span></div>
+              <div class="tut-input"><span class="tut-input-label">Gamepad</span><span id="tut-pad"></span></div>
             </div>
           </div>
-          <button id="btn-guide-back" class="primary" type="button">Back</button>
+          <div class="tut-nav">
+            <button id="btn-tut-prev" type="button">Back</button>
+            <button id="btn-tut-next" class="primary" type="button">Next</button>
+          </div>
+          <button id="btn-guide-back" class="quiet" type="button">Menu</button>
         </section>
 
         <section id="screen-paused" class="screen" hidden>

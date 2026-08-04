@@ -19,8 +19,7 @@ const PULL_MIN = 18;      // downward travel that counts as loading the legs
 const PULL_FULL = 96;     // ...and where the charge is at maximum
 const FLICK_MIN = 24;     // travel out of the pull that counts as a flick
 const CURL_MIN = 52;      // sideways excursion that turns a flick into a 360
-const TAP_PX = 12;
-const TAP_MS = 260;
+const PUSH_SLIDE = 30;    // downward travel on the steering side that pushes
 
 /**
  * Which trick a flick is, from where it went.
@@ -118,7 +117,7 @@ export class Input {
       lowX: e.clientX,
       curl: 0,
       pulled: false,
-      t0: performance.now(),
+      pushedSlide: false,
     });
     if (this.el.setPointerCapture) {
       try {
@@ -137,6 +136,19 @@ export class Input {
     if (p.left) {
       // A steering stick with a dead zone, so resting a thumb does not carve.
       this.steerTouch = C.clamp((p.x - p.x0) / 74, -1, 1);
+      // Sliding the thumb down is a push — the same downward pull the flick
+      // side uses to charge, but on the steering side it just kicks once. It
+      // re-arms the moment the slide comes back up, so a repeated up-down drag
+      // pushes over and over, the way a real push cycle repeats.
+      const down = p.y - p.y0;
+      if (down > PUSH_SLIDE) {
+        if (!p.pushedSlide) {
+          this.pushQueued = true;
+          p.pushedSlide = true;
+        }
+      } else if (down < PUSH_SLIDE * 0.4) {
+        p.pushedSlide = false;
+      }
       return;
     }
     // The pull: how far below the deepest point we have been, and how far the
@@ -164,10 +176,6 @@ export class Input {
 
     if (p.left) {
       this.steerTouch = 0;
-      // A tap on the steering side is a push, which is the one thing you do far
-      // more often than anything else.
-      const moved = Math.hypot(p.x - p.x0, p.y - p.y0);
-      if (moved < TAP_PX && performance.now() - p.t0 < TAP_MS) this.pushQueued = true;
       return;
     }
 

@@ -225,6 +225,24 @@ export class Audio {
     });
   }
 
+  /** A logo picked up: a bright, single ping, distinct from a combo's chime. */
+  collect() {
+    if (!this.ready) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(900, t);
+    osc.frequency.exponentialRampToValueAtTime(1500, t + 0.09);
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    g.gain.linearRampToValueAtTime(0.24, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    osc.connect(g).connect(this.master);
+    osc.start(t);
+    osc.stop(t + 0.25);
+  }
+
   /** Everything quiet, for a pause or a menu. */
   hush() {
     if (!this.ready) return;

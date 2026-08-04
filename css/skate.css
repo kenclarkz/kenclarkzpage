@@ -111,6 +111,10 @@ body {
   font-size: 10px;
 }
 
+.readout.logos span:last-child {
+  color: var(--hot);
+}
+
 #air {
   position: absolute;
   top: 54px;
@@ -438,47 +442,140 @@ button.off {
   color: var(--dim);
 }
 
-/* --- the controls guide -------------------------------------------------- */
-.guide {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 14px;
-  margin-bottom: 12px;
+/* --- the park picker ------------------------------------------------------ */
+.park-now {
+  margin: -4px 0 4px;
+  font-size: 12px;
+  color: var(--hot);
+  font-weight: 600;
 }
 
-.guide-block h2 {
-  margin: 0 0 6px;
+.park-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.park-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  min-height: 84px;
+  padding: 12px 14px;
+}
+
+.park-card b {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.park-card span {
   font-size: 12px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--dim);
+  font-weight: 400;
+}
+
+.park-card.current {
+  border-color: var(--hot);
+  box-shadow: inset 0 0 0 1px var(--hot);
+}
+
+.park-card.current b {
   color: var(--hot);
 }
 
-.guide-block ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+/* --- the tutorial ---------------------------------------------------------- */
+.tut-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 2px 0 4px;
+}
+
+.tut-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.tut-dots i.on {
+  background: var(--hot);
+}
+
+.tut-card {
+  text-align: left;
+  padding: 4px 2px 8px;
+}
+
+.tut-card h2 {
+  margin: 0 0 6px;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.tut-card p {
+  margin: 0 0 12px;
   font-size: 13px;
   line-height: 1.55;
   color: var(--dim);
 }
 
-.guide-block li {
-  padding: 2px 0;
+.tut-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.guide-block b {
+.tut-input {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.tut-input:empty,
+.tut-input:has(span:last-child:empty) {
+  display: none;
+}
+
+.tut-input-label {
+  flex-shrink: 0;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 10px;
+  padding-top: 1px;
+}
+
+.tut-input span:last-child {
+  text-align: right;
   color: var(--ink);
   font-weight: 600;
 }
 
-.note {
-  margin: 8px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #7d8792;
-  border-left: 2px solid var(--line);
-  padding-left: 9px;
+.tut-nav {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.tut-nav button {
+  flex: 1;
+}
+
+.tut-nav button:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 /* --- the iOS install sheet ---------------------------------------------- */

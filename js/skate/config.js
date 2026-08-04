@@ -56,19 +56,20 @@ export const AIR_DRAG = 0.013;       // per (m/s)², on the whole rider+board ma
 
 // --- rolling --------------------------------------------------------------
 // Coasting deceleration: bearing and urethane losses are near-constant, air
-// resistance grows with the square. At 8 m/s this totals ~0.7 m/s², which is
-// about the 30 m of roll-out a real push gives you.
-export const ROLL_FRICTION = 0.14;   // m/s², constant term
-export const ROLL_DRAG = 0.0095;     // m/s² per (m/s)²
+// resistance grows with the square. Eased off a notch from a real board's
+// numbers — this is a game, and a run that bleeds speed as fast as the real
+// thing spends too much of it pushing rather than skating.
+export const ROLL_FRICTION = 0.10;   // m/s², constant term
+export const ROLL_DRAG = 0.0075;     // m/s² per (m/s)²
 export const ROUGH_FRICTION = 1.9;   // m/s² extra on grass/dirt outside the park
 
 // --- pushing --------------------------------------------------------------
-export const PUSH_TIME = 0.62;       // one full push cycle, foot down to foot back
+export const PUSH_TIME = 0.56;       // one full push cycle, foot down to foot back
 export const PUSH_KICK_START = 0.16; // when in the cycle the foot is driving
 export const PUSH_KICK_END = 0.42;
-export const PUSH_IMPULSE = 6.6;     // m/s² while driving; ~1.6 m/s per push
-export const PUSH_TOP_SPEED = 6.6;   // pushes stop helping here — legs run out
-export const PUSH_MIN_INTERVAL = 0.34;
+export const PUSH_IMPULSE = 7.8;     // m/s² while driving
+export const PUSH_TOP_SPEED = 8.6;   // pushes stop helping here — legs run out
+export const PUSH_MIN_INTERVAL = 0.30;
 
 // How much of a lean the deck itself takes. A skateboard's trucks only tilt
 // ten or fifteen degrees before the bushings bottom out and the wheels touch —

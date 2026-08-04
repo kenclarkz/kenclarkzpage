@@ -11,6 +11,10 @@
 // Which means the sides of anything raised are not surfaces at all — they are a
 // discontinuity, and physics.js reads a step up it cannot roll over as a wall to
 // hit. That is exactly how a curb behaves.
+//
+// Below the primitives sits `PARKS`: one spec object per map. Every map shares
+// the same pad, fence and dirt — only the obstacles inside `build()` change —
+// which is what lets six very different-feeling parks stay one small file.
 
 import * as THREE from '../game/three.js';
 import { box, piece, merge } from '../game/geo.js';
@@ -30,7 +34,10 @@ export const SMOOTH = 0;
 export const ROUGH = 1;
 export const TRANSITION = 2;
 
-// --- park extent ----------------------------------------------------------
+// --- park extent ------------------------------------------------------------
+// Every map shares this footprint. Six differently-shaped parks on six
+// differently-sized pads would each need their own fence, camera bounds and
+// AI patrol logic; one shared size means only the obstacles inside it differ.
 export const PARK_X = 26;
 export const PARK_Z = 30;
 
@@ -38,9 +45,6 @@ export const PARK_Z = 30;
 // sample() resolves ties by keeping the first feature it saw, so two surfaces at
 // exactly y = 0 would leave the whole park reading as dirt.
 const DIRT_Y = -0.02;
-
-/** Where a run starts, and where a reset puts you back. */
-export const SPAWN = { x: 0, y: 0, z: -14, yaw: 0 };
 
 // --- feature types --------------------------------------------------------
 // Each has at(x, z, out) -> boolean, filling `out` only on a hit, and
@@ -278,7 +282,15 @@ class Grind {
 }
 
 export class Park {
-  constructor() {
+  constructor(def) {
+    this.def = def;
+    this.id = def.id;
+    this.name = def.name;
+    this.blurb = def.blurb;
+    this.spawn = def.spawn;
+    this.patrol = def.patrol;
+    this.logos = def.logos;
+
     this.features = [];
     this.grinds = [];
     this.rails = [];   // mesh specs, filled by rail()
@@ -297,65 +309,15 @@ export class Park {
   }
 
   /**
-   * The park itself. Laid out as a line rather than a scatter: the skater starts
-   * at the south end facing +Z, and from there the kicker, funbox, ledge,
-   * handrail and both transitions can be reached without ever having to stop and
-   * turn around — which is what makes a park feel like a park instead of a
-   * gallery of obstacles.
+   * Every map starts here: dirt out to the horizon, then the paved pad on top
+   * of it. Riding off the concrete is punished with friction rather than with
+   * an invisible wall. What sits on the pad is the one thing that changes
+   * between maps, and that is entirely `def.build`'s job.
    */
   layout() {
-    // Dirt out to the horizon, then the paved pad on top of it. Riding off the
-    // concrete is punished with friction rather than with an invisible wall.
     this.add(new Slab(-200, 200, -200, 200, DIRT_Y, ROUGH, DIRT, 1.2));
     this.add(new Slab(-PARK_X, PARK_X, -PARK_Z, PARK_Z, 0, SMOOTH, CONCRETE, 0.55));
-
-    // --- north transition: the big quarterpipe ----------------------------
-    const qpN = this.add(new Quarter(-13, 13, 20, 'z', 1, 2.4, 1.6, 3.0));
-    // A deep platform behind the coping, not a ledge. Anyone with the speed to
-    // fly out of a 1.6 m lip travels several metres past it before coming down,
-    // and a park where that lands you in the dirt is a park with a missing deck.
-    this.add(new Slab(-13, 13, 20 + qpN.uTop, 29, 1.6, SMOOTH, CONCRETE, 1.7));
-    this.coping(-13, 13, 20 + qpN.uTop, 1.6);
-
-    // --- south transition: smaller, for pumping back the other way --------
-    const qpS = this.add(new Quarter(-9, 9, -20, 'z', -1, 2.0, 1.2, 3.0));
-    this.add(new Slab(-9, 9, -29, -20 - qpS.uTop, 1.2, SMOOTH, CONCRETE, 1.3));
-    this.coping(-9, 9, -20 - qpS.uTop, 1.2);
-
-    // --- west bank, with a ledge along its top ----------------------------
-    this.add(new Bank(-24, -19, -9, 9, 'x', 1.25, 0));
-    this.add(new Slab(-26, -24, -9, 9, 1.25, SMOOTH, CONCRETE, 1.35));
-    this.grinds.push(new Grind(-24, 1.25, -9, -24, 1.25, 9, 'ledge', 0.05));
-
-    // --- funbox: bank up, flat rail across the top, bank down -------------
-    this.add(new Bank(-3.2, 3.2, -6, -3, 'z', 0, 0.5));
-    this.add(new Slab(-3.2, 3.2, -3, 3, 0.5, SMOOTH, CONCRETE, 0.55));
-    this.add(new Bank(-3.2, 3.2, 3, 6, 'z', 0.5, 0));
-    // The rail runs the length of the box, in line with both banks, so the whole
-    // obstacle is one movement: up, lock on, ride it out, down.
-    this.rail(0, 0.82, -3.1, 0, 0.82, 3.1, 0.03);
-    this.grinds.push(new Grind(-3.2, 0.5, -3, -3.2, 0.5, 3, 'ledge', 0.05));
-    this.grinds.push(new Grind(3.2, 0.5, -3, 3.2, 0.5, 3, 'ledge', 0.05));
-
-    // --- east manual pad --------------------------------------------------
-    this.add(new Bank(3.4, 6, -2.2, 2.2, 'x', 0, 0.42));
-    this.add(new Slab(6, 14, -2.2, 2.2, 0.42, SMOOTH, CONCRETE, 0.47));
-    this.grinds.push(new Grind(6, 0.42, 2.2, 14, 0.42, 2.2, 'ledge', 0.05));
-    this.grinds.push(new Grind(6, 0.42, -2.2, 14, 0.42, -2.2, 'ledge', 0.05));
-
-    // --- stair set and handrail, reached over the bank behind them ---------
-    this.add(new Bank(13, 23, 16, 20, 'z', 1.25, 0));
-    this.add(new Slab(13, 23, 6, 16, 1.25, SMOOTH, CONCRETE, 1.35));
-    this.add(new Stairs(13, 23, 6, 'z', -1, 5, 0.25, 0.56));
-    // The rail overhangs both ends of the stairs, like a real handrail: you have
-    // to ollie onto it above the top step, and you ride off past the bottom one.
-    this.rail(14.4, 1.36, 6.5, 14.4, 0.06, 2.4, 0.028);
-
-    // --- flat bar out west ------------------------------------------------
-    this.rail(-10, 0.4, -6, -10, 0.4, 8, 0.028);
-
-    // --- kicker, for airs on the way to anywhere --------------------------
-    this.add(new Quarter(-17.4, -14.6, 5.6, 'z', -1, 1.5, 0.62));
+    this.def.build(this);
   }
 
   /** A round grindable bar, plus the posts that hold it up. */
@@ -367,7 +329,18 @@ export class Park {
   /** Steel pipe let into a ramp's lip. Grindable, and it reads as a real park. */
   coping(x0, x1, z, y) {
     this.grinds.push(new Grind(x0, y, z, x1, y, z, 'coping', 0.032));
-    this.copings.push({ x0, x1, z, y });
+    this.copings.push({ x0, x1, z0: z, z1: z, y });
+  }
+
+  /** As coping(), but for a wall that runs along z instead of x. */
+  copingZ(x, y, z0, z1) {
+    this.grinds.push(new Grind(x, y, z0, x, y, z1, 'coping', 0.032));
+    this.copings.push({ x0: x, x1: x, z0, z1, y });
+  }
+
+  /** A ledge edge — the grindable line only; the platform is a Slab of its own. */
+  ledge(ax, ay, az, bx, by, bz) {
+    this.grinds.push(new Grind(ax, ay, az, bx, by, bz, 'ledge', 0.05));
   }
 
   // --- the surface query -------------------------------------------------
@@ -479,7 +452,7 @@ export class Park {
 
     for (const c of this.copings) {
       // Sunk a centimetre into the lip, the way coping is actually set.
-      tube(entries, COPING, c.x0, c.y - 0.012, c.z, c.x1, c.y - 0.012, c.z, 0.032);
+      tube(entries, COPING, c.x0, c.y - 0.012, c.z0, c.x1, c.y - 0.012, c.z1, 0.032);
     }
 
     const geo = merge(entries, 0.35);
@@ -515,8 +488,10 @@ export class Park {
     }
 
     // Trees beyond the fence. Crude, but they give the horizon a scale and the
-    // camera something to sweep past on a spin.
-    let a = 0x51ed;
+    // camera something to sweep past on a spin. Seeded per park, so the trees
+    // are the same shape every time you load a given map but different across
+    // the six of them.
+    let a = this.def.seed || 0x51ed;
     const rng = () => ((a = (a * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
     for (let i = 0; i < 44; i++) {
       const ang = rng() * Math.PI * 2;
@@ -563,3 +538,278 @@ function tube(entries, color, ax, ay, az, bx, by, bz, radius) {
   const geo = new THREE.CylinderGeometry(radius, radius, len, 9, 1);
   entries.push({ geo, color, matrix: new THREE.Matrix4().compose(_mid, _q, _one) });
 }
+
+// ===========================================================================
+// the six maps
+// ===========================================================================
+// Each `build(p)` only ever calls p.add / p.rail / p.coping / p.ledge — the pad,
+// the fence, the dirt and the mesh assembly above are common to all of them.
+// `spawn` is where a run and a respawn put you; `patrol` is the loop the AI
+// skaters tour, chosen by hand for each layout so it stays clear of the
+// obstacles below rather than clipping through them; `logos` are the six
+// collectible spots.
+
+export const PARKS = [
+  {
+    id: 'home',
+    name: 'Home Park',
+    blurb: 'Funbox, a handrail and two transitions. Where every run starts.',
+    seed: 0x51ed,
+    spawn: { x: 0, y: 0, z: -14, yaw: 0 },
+    patrol: [
+      { x: 0, z: -16 }, { x: 9, z: -2 }, { x: 9, z: 12 }, { x: 0, z: 17 },
+      { x: -9, z: 2 }, { x: -6, z: -12 },
+    ],
+    logos: [
+      { x: 0, z: -8 }, { x: -8, z: 0 }, { x: 10, z: 0 }, { x: 0, z: 12 },
+      { x: 18, z: 11 }, { x: -19, z: -4 },
+    ],
+    build(p) {
+      // --- north transition: the big quarterpipe ---------------------------
+      const qpN = p.add(new Quarter(-13, 13, 20, 'z', 1, 2.4, 1.6, 3.0));
+      p.add(new Slab(-13, 13, 20 + qpN.uTop, 29, 1.6, SMOOTH, CONCRETE, 1.7));
+      p.coping(-13, 13, 20 + qpN.uTop, 1.6);
+
+      // --- south transition: smaller, for pumping back the other way -------
+      const qpS = p.add(new Quarter(-9, 9, -20, 'z', -1, 2.0, 1.2, 3.0));
+      p.add(new Slab(-9, 9, -29, -20 - qpS.uTop, 1.2, SMOOTH, CONCRETE, 1.3));
+      p.coping(-9, 9, -20 - qpS.uTop, 1.2);
+
+      // --- west bank, with a ledge along its top ----------------------------
+      p.add(new Bank(-24, -19, -9, 9, 'x', 1.25, 0));
+      p.add(new Slab(-26, -24, -9, 9, 1.25, SMOOTH, CONCRETE, 1.35));
+      p.ledge(-24, 1.25, -9, -24, 1.25, 9);
+
+      // --- funbox: bank up, flat rail across the top, bank down -------------
+      p.add(new Bank(-3.2, 3.2, -6, -3, 'z', 0, 0.5));
+      p.add(new Slab(-3.2, 3.2, -3, 3, 0.5, SMOOTH, CONCRETE, 0.55));
+      p.add(new Bank(-3.2, 3.2, 3, 6, 'z', 0.5, 0));
+      p.rail(0, 0.82, -3.1, 0, 0.82, 3.1, 0.03);
+      p.ledge(-3.2, 0.5, -3, -3.2, 0.5, 3);
+      p.ledge(3.2, 0.5, -3, 3.2, 0.5, 3);
+
+      // --- east manual pad ---------------------------------------------------
+      p.add(new Bank(3.4, 6, -2.2, 2.2, 'x', 0, 0.42));
+      p.add(new Slab(6, 14, -2.2, 2.2, 0.42, SMOOTH, CONCRETE, 0.47));
+      p.ledge(6, 0.42, 2.2, 14, 0.42, 2.2);
+      p.ledge(6, 0.42, -2.2, 14, 0.42, -2.2);
+
+      // --- stair set and handrail --------------------------------------------
+      p.add(new Bank(13, 23, 16, 20, 'z', 1.25, 0));
+      p.add(new Slab(13, 23, 6, 16, 1.25, SMOOTH, CONCRETE, 1.35));
+      p.add(new Stairs(13, 23, 6, 'z', -1, 5, 0.25, 0.56));
+      p.rail(14.4, 1.36, 6.5, 14.4, 0.06, 2.4, 0.028);
+
+      // --- flat bar out west --------------------------------------------------
+      p.rail(-10, 0.4, -6, -10, 0.4, 8, 0.028);
+
+      // --- kicker, for airs on the way to anywhere ----------------------------
+      p.add(new Quarter(-17.4, -14.6, 5.6, 'z', -1, 1.5, 0.62));
+    },
+  },
+
+  {
+    id: 'bowl',
+    name: 'The Bowl',
+    blurb: 'A kidney bowl with coping on every wall. Pump it, never stop.',
+    seed: 0x9c31,
+    spawn: { x: 0, y: 0, z: -14, yaw: 0 },
+    patrol: [
+      { x: 0, z: -15 }, { x: 8, z: -8 }, { x: 8, z: 8 }, { x: 0, z: 15 },
+      { x: -8, z: 8 }, { x: -8, z: -8 },
+    ],
+    logos: [
+      { x: 0, z: -6 }, { x: 6, z: 0 }, { x: 0, z: 6 }, { x: -6, z: 0 },
+      { x: 12, z: -13 }, { x: -12, z: 13 },
+    ],
+    build(p) {
+      // Four walls of one bowl, each a quarterpipe tangent to a shared flat
+      // floor at y = 0 — so a line can be carried from any wall to any other.
+      const n = p.add(new Quarter(-9, 9, 9, 'z', 1, 2.6, 1.9, 2.2));
+      p.add(new Slab(-9, 9, 9 + n.uTop, 9 + n.uTop + 2.2, 1.9, SMOOTH, CONCRETE, 1.9));
+      p.coping(-9, 9, 9 + n.uTop, 1.9);
+
+      const s = p.add(new Quarter(-9, 9, -9, 'z', -1, 2.6, 1.9, 2.2));
+      p.add(new Slab(-9, 9, -9 - s.uTop - 2.2, -9 - s.uTop, 1.9, SMOOTH, CONCRETE, 1.9));
+      p.coping(-9, 9, -9 - s.uTop, 1.9);
+
+      const e = p.add(new Quarter(-9, 9, 9, 'x', 1, 2.4, 1.7, 1.8));
+      p.add(new Slab(9 + e.uTop, 9 + e.uTop + 1.8, -9, 9, 1.7, SMOOTH, CONCRETE, 1.7));
+      p.copingZ(9 + e.uTop, 1.7, -9, 9);
+
+      const w = p.add(new Quarter(-9, 9, -9, 'x', -1, 2.4, 1.7, 1.8));
+      p.add(new Slab(-9 - w.uTop - 1.8, -9 - w.uTop, -9, 9, 1.7, SMOOTH, CONCRETE, 1.7));
+      p.copingZ(-9 - w.uTop, 1.7, -9, 9);
+
+      // A hip in one corner, so a line can carry diagonally across the bowl
+      // instead of only wall to wall.
+      p.add(new Bank(-9, -5.5, -9, -5.5, 'x', 0, 1.1));
+
+      // The shallow end and a flat bar down the middle, so there is somewhere
+      // to grind between pumps.
+      p.rail(0, 0.42, -4, 0, 0.42, 4, 0.03);
+    },
+  },
+
+  {
+    id: 'vert',
+    name: 'Vert Alley',
+    blurb: 'Two tall walls facing off, with a spine between them. Airs, mostly.',
+    seed: 0x77a4,
+    spawn: { x: 0, y: 0, z: -6, yaw: 0 },
+    patrol: [
+      { x: 0, z: -20 }, { x: 10, z: -6 }, { x: 10, z: 6 }, { x: 0, z: 20 },
+      { x: -10, z: 6 }, { x: -10, z: -6 },
+    ],
+    logos: [
+      { x: 0, z: -14 }, { x: 0, z: 14 }, { x: 14, z: 0 }, { x: -14, z: 0 },
+      { x: 8, z: -18 }, { x: -8, z: 18 },
+    ],
+    build(p) {
+      // A tall wall at each end of a long, narrow alley — the closest thing a
+      // skateboard has to a halfpipe.
+      const n = p.add(new Quarter(-11, 11, 24, 'z', 1, 3.2, 2.5, 2.6));
+      p.add(new Slab(-11, 11, 24 + n.uTop, 29, 2.5, SMOOTH, CONCRETE, 2.5));
+      p.coping(-11, 11, 24 + n.uTop, 2.5);
+
+      const s = p.add(new Quarter(-11, 11, -24, 'z', -1, 3.2, 2.5, 2.6));
+      p.add(new Slab(-11, 11, -29, -24 - s.uTop, 2.5, SMOOTH, CONCRETE, 2.5));
+      p.coping(-11, 11, -24 - s.uTop, 2.5);
+
+      // A spine down the middle: two small quarters back to back, sharing no
+      // deck at all, so a transfer means clearing the whole width in the air.
+      const spineR = 1.4, spineH = 1.0;
+      const spN = p.add(new Quarter(-6, 6, 1.2, 'z', 1, spineR, spineH));
+      const spS = p.add(new Quarter(-6, 6, -1.2, 'z', -1, spineR, spineH));
+      p.coping(-6, 6, 1.2 + spN.uTop, spineH);
+      p.coping(-6, 6, -1.2 - spS.uTop, spineH);
+
+      // A rail either side of the alley for the runs that stay on the ground.
+      p.rail(-9.5, 0.4, -10, -9.5, 0.4, 10, 0.028);
+      p.rail(9.5, 0.4, -10, 9.5, 0.4, 10, 0.028);
+    },
+  },
+
+  {
+    id: 'plaza',
+    name: 'Street Plaza',
+    blurb: 'Ledges, a kinked double set and a long manual pad. Technical.',
+    seed: 0x1e6d,
+    spawn: { x: 0, y: 0, z: -18, yaw: 0 },
+    patrol: [
+      { x: 0, z: -20 }, { x: 12, z: -12 }, { x: 12, z: 4 }, { x: 0, z: 14 },
+      { x: -12, z: 4 }, { x: -12, z: -12 },
+    ],
+    logos: [
+      { x: 0, z: -10 }, { x: -10, z: -2 }, { x: 10, z: -2 }, { x: 0, z: 6 },
+      { x: 15, z: 10 }, { x: -15, z: 10 },
+    ],
+    build(p) {
+      // A long, low manual pad down the centre — the plaza's spine.
+      p.add(new Bank(-2.5, 2.5, -10, -7, 'z', 0, 0.28));
+      p.add(new Slab(-2.5, 2.5, -7, 9, 0.28, SMOOTH, CONCRETE, 0.32));
+      p.add(new Bank(-2.5, 2.5, 9, 12, 'z', 0.28, 0));
+      p.ledge(-2.5, 0.28, -7, -2.5, 0.28, 9);
+      p.ledge(2.5, 0.28, -7, 2.5, 0.28, 9);
+
+      // A three-block ledge run down one side, each a hair taller than the last.
+      for (let i = 0; i < 3; i++) {
+        const x0 = 6 + i * 4.2, x1 = x0 + 3.4, y = 0.34 + i * 0.08;
+        p.add(new Bank(x0, x0 + 0.6, -4, 4, 'x', 0, y));
+        p.add(new Slab(x0 + 0.6, x1, -4, 4, y, SMOOTH, CONCRETE, 0.3 + y));
+        p.ledge(x0 + 0.6, y, -4, x1, y, -4);
+        p.ledge(x0 + 0.6, y, 4, x1, y, 4);
+      }
+
+      // A kinked double set: two flights at an angle, one long rail running
+      // over both, off a single flat landing at the top.
+      p.add(new Slab(-20, -12, 10, 22, 1.4, SMOOTH, CONCRETE, 1.5));
+      p.add(new Stairs(-20, -16, 10, 'z', -1, 4, 0.28, 0.58));
+      p.add(new Stairs(-16, -12, 10, 'z', -1, 6, 0.19, 0.58));
+      p.rail(-18, 1.5, 10.4, -14, 0.1, 2.9, 0.028);
+
+      // Two picnic-table hips for wallride-style pop lines.
+      p.add(new Bank(10, 14, 14, 18, 'x', 0, 0.5));
+      p.add(new Bank(10, 14, 18, 22, 'x', 0.5, 0));
+    },
+  },
+
+  {
+    id: 'garden',
+    name: 'Mini Ramp Garden',
+    blurb: 'Four small ramps close together. Fast combos, forgiving pop.',
+    seed: 0x4b2f,
+    spawn: { x: 0, y: 0, z: -18, yaw: 0 },
+    patrol: [
+      { x: 0, z: -19 }, { x: 9, z: -7 }, { x: 9, z: 7 }, { x: 0, z: 17 },
+      { x: -9, z: 7 }, { x: -9, z: -7 },
+    ],
+    logos: [
+      { x: 0, z: -11 }, { x: -7, z: -2 }, { x: 7, z: -2 }, { x: 0, z: 8 },
+      { x: 7, z: 14 }, { x: -7, z: 14 },
+    ],
+    build(p) {
+      // Four small mini ramps, each just big enough for real air, spaced so a
+      // roll-out of one feeds straight into the next.
+      const specs = [
+        { cx: -7, cz: -3, sign: 1 },
+        { cx: 7, cz: -3, sign: -1 },
+        { cx: -7, cz: 9, sign: 1 },
+        { cx: 7, cz: 9, sign: -1 },
+      ];
+      for (const { cx, cz, sign } of specs) {
+        const half = 3.2;
+        const q = p.add(new Quarter(cx - half, cx + half, cz, 'z', sign, 1.5, 0.95, 1.4));
+        const back = cz + sign * (q.uTop + 1.4);
+        p.add(
+          sign > 0
+            ? new Slab(cx - half, cx + half, cz + q.uTop, back, 0.95, SMOOTH, CONCRETE, 1.0)
+            : new Slab(cx - half, cx + half, back, cz - q.uTop, 0.95, SMOOTH, CONCRETE, 1.0)
+        );
+        p.coping(cx - half, cx + half, cz + sign * q.uTop, 0.95);
+      }
+
+      // A flat bar and a small funbox in the gap between all four, so there is
+      // somewhere to link a trick between ramps.
+      p.rail(-3, 0.4, 3, 3, 0.4, 3, 0.028);
+      p.add(new Bank(-2.2, 2.2, -1, 0.5, 'z', 0, 0.32));
+      p.add(new Bank(-2.2, 2.2, 0.5, 2, 'z', 0.32, 0));
+    },
+  },
+
+  {
+    id: 'bigair',
+    name: 'Big Air',
+    blurb: 'One mega ramp, and a gap only a rail or a real ollie gets you across.',
+    seed: 0xd813,
+    spawn: { x: 0, y: 0, z: -20, yaw: 0 },
+    patrol: [
+      { x: 0, z: -20 }, { x: 10, z: -8 }, { x: 10, z: 0 }, { x: 0, z: 10 },
+      { x: -10, z: 0 }, { x: -10, z: -8 },
+    ],
+    logos: [
+      { x: 0, z: -18 }, { x: -12, z: -8 }, { x: 12, z: -8 }, { x: 0, z: 4 },
+      { x: 16, z: 6 }, { x: -16, z: 6 },
+    ],
+    build(p) {
+      // The mega ramp: an elevated run-up (so a spawn can stand on it rather
+      // than floating over a cliff), a bank down to the flat, then straight
+      // into a tall quarter with a deep platform, so there is room to land
+      // the air on top as well as to fly clean off the lip.
+      p.add(new Slab(-8, 8, -24, -14, 3.0, SMOOTH, CONCRETE, 3.0));
+      p.add(new Bank(-8, 8, -14, -8, 'z', 3.0, 0));
+      const q = p.add(new Quarter(-8, 8, 6, 'z', 1, 3.4, 2.7, 3.4));
+      p.add(new Slab(-8, 8, 6 + q.uTop, 6 + q.uTop + 3.4, 2.7, SMOOTH, CONCRETE, 2.7));
+      p.coping(-8, 8, 6 + q.uTop, 2.7);
+
+      // A real gap jump off to one side: bank up, a clean break, flat below,
+      // bank back up on the far side. There is no way across it that is not
+      // either an ollie or a grind on the rail that spans it.
+      p.add(new Bank(-19, -14, -6, 0, 'x', 0, 1.3));
+      p.add(new Bank(14, 19, -6, 0, 'x', 1.3, 0));
+      p.rail(-14.2, 1.35, -3, 14.2, 1.35, -3, 0.028);
+    },
+  },
+];
+
+export const DEFAULT_PARK = PARKS[0];

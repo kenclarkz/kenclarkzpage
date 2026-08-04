@@ -12,8 +12,10 @@ const DEFAULTS = {
   tricks: 0,
   bails: 0,
   bestAir: 0,
+  logos: 0,
   sound: true,
   seenGuide: false,
+  park: 'home',
 };
 
 function read() {
@@ -23,12 +25,13 @@ function read() {
     const parsed = JSON.parse(raw);
     const s = { ...DEFAULTS, ...parsed };
     // A hand-edited or half-written record must not be able to break the game.
-    for (const k of ['best', 'bestTrick', 'tricks', 'bails']) {
+    for (const k of ['best', 'bestTrick', 'tricks', 'bails', 'logos']) {
       s[k] = Math.max(0, Math.floor(Number(s[k]) || 0));
     }
     s.bestAir = Math.max(0, Number(s.bestAir) || 0);
     s.sound = s.sound !== false;
     s.seenGuide = s.seenGuide === true;
+    s.park = typeof s.park === 'string' ? s.park : 'home';
     return s;
   } catch {
     return { ...DEFAULTS };
@@ -61,11 +64,17 @@ export const save = {
   get bestAir() {
     return state.bestAir;
   },
+  get logos() {
+    return state.logos;
+  },
   get sound() {
     return state.sound;
   },
   get seenGuide() {
     return state.seenGuide;
+  },
+  get park() {
+    return state.park;
   },
 
   /** @returns true if this beat the previous best combo. */
@@ -93,6 +102,16 @@ export const save = {
     state.bestAir = Math.round(metres * 100) / 100;
     flush();
     return true;
+  },
+
+  recordLogo() {
+    state.logos++;
+    flush();
+  },
+
+  setPark(id) {
+    state.park = id;
+    flush();
   },
 
   setSound(on) {

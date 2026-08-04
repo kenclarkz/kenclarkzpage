@@ -99,7 +99,10 @@ section('Boot');
     features: window.__skate.park.features.length,
   }));
   ok(info.tris > 2000, `the park is drawing (${info.tris} triangles)`);
-  ok(info.calls <= 24, `and in few draw calls (${info.calls})`);
+  // The park itself is still two merged draw calls; the rest of the count is
+  // the AI skaters, the birds and the six logos, none of which are merged
+  // because each one needs its own transform every frame.
+  ok(info.calls <= 110, `and in a bounded number of draw calls (${info.calls})`);
   ok(info.features >= 14, `the park has its obstacles (${info.features} surfaces)`);
   ok(info.grinds >= 8, `and its grindable lines (${info.grinds})`);
 }
@@ -162,12 +165,12 @@ section('Rolling');
     // Eleven pushes, each started the moment the last cycle ends.
     for (let i = 0; i < 11; i++) {
       g.drive(1 / 120, { push: true });
-      g.hold(0.62);
+      g.hold(0.56);
     }
     return g.ride.speed;
   });
-  ok(pushed > 3.5, `pushing gets you moving (${pushed.toFixed(2)} m/s)`);
-  ok(pushed < 8, 'and cannot push past what a leg can do');
+  ok(pushed > 4, `pushing gets you moving (${pushed.toFixed(2)} m/s)`);
+  ok(pushed < 9.2, 'and cannot push past what a leg can do');
 
   const rough = await run(() => {
     const g = window.__skate;
@@ -684,6 +687,177 @@ section('Flick-It');
     best: window.__skate.save.bestTrick,
   }));
   ok(flicked.mode !== 0 || flicked.tricks > 0, `a mouse drag pops a trick (mode ${flicked.mode}, ${flicked.tricks} landed)`);
+}
+
+// --------------------------------------------------------------------------
+section('Parks');
+{
+  const info = await run(() => {
+    const g = window.__skate;
+    return { count: g.parks.length, ids: g.parks.map((p) => p.id), current: g.park.id };
+  });
+  ok(info.count === 6, `there are six parks (${info.count})`);
+  ok(new Set(info.ids).size === info.count, 'each with a distinct id');
+  ok(info.current === 'home', 'and the game boots into Home Park');
+
+  // Every map needs a rideable spawn, a patrol loop the AI can actually
+  // follow, and six logos — checked by actually loading each of the six in
+  // turn, since `parks` is the raw list of definitions and only the live
+  // `park` — the one switchPark just built — has a height field to query.
+  const shapes = await run(() =>
+    window.__skate.parks.map((def) => {
+      const p = window.__skate.switchPark(def.id);
+      return {
+        id: p.id,
+        onSurface: Math.abs(p.heightAt(p.spawn.x, p.spawn.z)) < 5,
+        patrol: p.patrol.length,
+        logos: p.logos.length,
+        grinds: p.grinds.length,
+      };
+    })
+  );
+  for (const s of shapes) {
+    ok(s.onSurface, `${s.id}: the spawn sits on a real surface`);
+    ok(s.patrol >= 4, `${s.id}: a patrol loop with real waypoints (${s.patrol})`);
+    ok(s.logos === 6, `${s.id}: six logos (${s.logos})`);
+    ok(s.grinds >= 1, `${s.id}: at least one grindable line (${s.grinds})`);
+  }
+
+  // Switching parks has to move the live ride onto the new map's spawn, not
+  // just swap the object reference out from under it.
+  const switched = await run(() => {
+    const g = window.__skate;
+    g.switchPark('bowl');
+    return { id: g.park.id, y: g.ride.pos.y, spawnY: g.park.heightAt(g.park.spawn.x, g.park.spawn.z) };
+  });
+  ok(switched.id === 'bowl', 'switchPark loads the requested map');
+  near(switched.y, switched.spawnY, 0.02, 'and drops the rider on its own spawn');
+  await run(() => window.__skate.switchPark('home'));
+}
+
+// --------------------------------------------------------------------------
+section('AI skaters');
+{
+  const count = await run(() => window.__skate.bots.length);
+  ok(count === 3, `three AI skaters roam the park (${count})`);
+
+  // Give them real simulated time and see that they actually cover ground —
+  // not just idle on their spawn point waiting for a player who never drives
+  // them, and not stuck against the first thing they roll into either.
+  const moved = await run(() => {
+    const g = window.__skate;
+    const before = g.bots.map((b) => ({ x: b.ride.pos.x, z: b.ride.pos.z }));
+    for (let i = 0; i < 600; i++) for (const b of g.bots) b.step(1 / 120);
+    return before.map((p, i) => Math.hypot(g.bots[i].ride.pos.x - p.x, g.bots[i].ride.pos.z - p.z));
+  });
+  ok(moved.every((d) => d > 1), `every bot covers real ground in 5 s (${moved.map((d) => d.toFixed(1)).join(', ')} m)`);
+}
+
+// --------------------------------------------------------------------------
+section('Birds');
+{
+  const count = await run(() => window.__skate.birds.length);
+  ok(count === 3, `three birds circle the park (${count})`);
+
+  const flight = await run(() => {
+    const g = window.__skate;
+    const b = g.birds[0];
+    b.update(0);
+    const y0 = b.group.position.y;
+    const p0 = b.group.position.clone();
+    b.update(3);
+    return { dist: p0.distanceTo(b.group.position), y0, y1: b.group.position.y };
+  });
+  ok(flight.dist > 1, `a bird moves along its circuit (${flight.dist.toFixed(2)} m in 3 s)`);
+  ok(flight.y0 > 3 && flight.y1 > 3, 'and stays well above the park throughout');
+}
+
+// --------------------------------------------------------------------------
+section('Collectibles');
+{
+  const before = await run(() => {
+    const g = window.__skate;
+    g.switchPark('home');
+    g.start();
+    return { logos: g.logos.length, saved: g.save.logos };
+  });
+  ok(before.logos === 6, `home park has six logos to find (${before.logos})`);
+
+  await run(() => {
+    const g = window.__skate;
+    const l = g.logos[0];
+    g.place(l.x, l.z, 0, 0);
+  });
+  await sleep(250); // real time, so the live loop's own pickup check runs it
+  const picked = await run(() => ({
+    collected: window.__skate.logos[0].collected,
+    saved: window.__skate.save.logos,
+  }));
+  ok(picked.collected, 'rolling onto a logo collects it');
+  ok(picked.saved === before.saved + 1, 'and it is recorded for good');
+
+  const cleared = await run(() => {
+    const g = window.__skate;
+    g.switchPark('bowl');
+    g.switchPark('home');
+    return g.logos.every((l) => !l.collected);
+  });
+  ok(cleared, 'and a fresh load of the park puts them all back');
+}
+
+// --------------------------------------------------------------------------
+section('Push gesture (touch and mouse)');
+{
+  const before = await run(() => {
+    const g = window.__skate;
+    g.unfreeze();
+    g.place(-6, -18, 0, 0);
+    return g.ride.speed;
+  });
+  const w = 900;
+  const h = 560;
+  // Left half of the screen, dragged straight down — the gesture that replaced
+  // a tap, so pushing off does not need lifting the thumb between kicks.
+  await page.mouse.move(w * 0.25, h * 0.4);
+  await page.mouse.down();
+  await page.mouse.move(w * 0.25, h * 0.4 + 60, { steps: 6 });
+  await sleep(150);
+  await page.mouse.up();
+  await sleep(150);
+  const after = await run(() => window.__skate.ride.speed);
+  ok(before === 0 && after > 0.3, `sliding down the steering side pushes (0 → ${after.toFixed(2)} m/s)`);
+}
+
+// --------------------------------------------------------------------------
+section('Tutorial and menus');
+{
+  const tut = await run(() => {
+    const g = window.__skate;
+    g.hud.show('guide');
+    const first = { step: g.hud.tutStep, prevDisabled: g.hud.tutPrev.disabled, nextLabel: g.hud.tutNext.textContent };
+    for (let i = 0; i < 30; i++) g.hud.showTutStep(g.hud.tutStep + 1); // walk well past the end
+    const last = { step: g.hud.tutStep, nextLabel: g.hud.tutNext.textContent };
+    g.hud.showTutStep(0);
+    return { first, last, dots: g.hud.tutDotEls.length };
+  });
+  ok(tut.first.step === 0, 'the tutorial opens on its first step');
+  ok(tut.first.prevDisabled, 'with no way to go back further than that');
+  ok(tut.dots >= 8, `and covers every move in its own step (${tut.dots} steps)`);
+  ok(tut.last.step === tut.dots - 1, 'stepping past the end just holds on the last one');
+  ok(tut.last.nextLabel.toLowerCase().includes('ride'), 'which offers to start the run instead of another step');
+
+  const picker = await run(() => {
+    const g = window.__skate;
+    g.hud.renderParks(g.parks, g.park.id);
+    const cards = [...g.hud.parkGrid.querySelectorAll('[data-park]')];
+    return { count: cards.length, ids: cards.map((c) => c.dataset.park) };
+  });
+  ok(picker.count === 6, `the park picker lists all six maps (${picker.count})`);
+  const known = await run(() => window.__skate.parks.map((p) => p.id));
+  ok(
+    picker.ids.every((id) => known.includes(id)),
+    'and every card points at a real map'
+  );
 }
 
 // --------------------------------------------------------------------------

@@ -6,16 +6,14 @@
 //
 // To ship an update: bump VERSION. That is the entire release process.
 
-const VERSION = 'v9';
+const VERSION = 'v10';
 const CACHE = `temple-runner-${VERSION}`;
 
 // All relative — this worker's scope is /kenclarkzpage/, not the domain root.
 const ASSETS = [
   'game.html',
-  'skate.html',
   'manifest.webmanifest',
   'css/game.css',
-  'css/skate.css',
   // three.module.min.js imports three.core.min.js by relative path. Omitting
   // the core file works fine online and gives a blank screen offline.
   'vendor/three/three.module.min.js',
@@ -37,24 +35,6 @@ const ASSETS = [
   'js/game/hud.js',
   'js/game/pwa.js',
   'js/game/main.js',
-  // The skate game shares three.js, the geometry helpers and the PWA plumbing
-  // above; everything else it needs is its own.
-  'js/skate/config.js',
-  'js/skate/park.js',
-  'js/skate/board.js',
-  'js/skate/skater.js',
-  'js/skate/physics.js',
-  'js/skate/tricks.js',
-  'js/skate/ragdoll.js',
-  'js/skate/camera.js',
-  'js/skate/input.js',
-  'js/skate/hud.js',
-  'js/skate/audio.js',
-  'js/skate/save.js',
-  'js/skate/ai.js',
-  'js/skate/bird.js',
-  'js/skate/collectible.js',
-  'js/skate/main.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-maskable-512.png',
